@@ -361,6 +361,7 @@
 
         /**
          * Inicializa la interfaz al cargar.
+         * Solo se llama una vez que el usuario (userId) está definido.
          */
         function initializeUI() {
             const storedPinHash = localStorage.getItem('secureChatPinHash');
@@ -627,7 +628,9 @@
                 const currentScrollTop = chatArea.scrollTop;
                 const isNearBottom = chatArea.scrollHeight - chatArea.clientHeight <= currentScrollTop + 10;
                 
-                chatArea.innerHTML = ''; // Limpiar antes de renderizar (simple re-renderizado)
+                // Mantenemos los mensajes existentes para evitar un parpadeo, pero los actualizamos.
+                // Para simplificar, aquí limpiamos y volvemos a renderizar, pero evitamos el scroll.
+                chatArea.innerHTML = ''; 
                 
                 snapshot.forEach(async (doc) => {
                     const data = doc.data();
@@ -740,9 +743,20 @@
             };
 
             const buttonContainer = modal.querySelector('#alertMessage').nextElementSibling;
+            
+            // Limpiar y añadir botones de Confirmar/Cancelar
+            const originalAcceptButton = document.createElement('button');
+            originalAcceptButton.onclick = () => modal.classList.add('hidden');
+            originalAcceptButton.className = 'w-full bg-[#58a6ff] text-white py-2 rounded-lg font-semibold hover:bg-[#4a8ce6]';
+            originalAcceptButton.innerText = 'Aceptar';
+            
             buttonContainer.innerHTML = '';
             buttonContainer.appendChild(confirmButton);
             buttonContainer.appendChild(cancelButton);
+            
+            // Guardar el botón original para restaurarlo después del cierre
+            modal.originalAcceptButton = originalAcceptButton;
+
 
             modal.classList.remove('hidden');
         }
@@ -861,13 +875,14 @@
             db = getFirestore(app);
             auth = getAuth(app);
 
-            // 1. Manejo de autenticación (siempre anónima para obtener un userId)
+            // 1. Listener de autenticación (Se activa al iniciar sesión anónima)
             onAuthStateChanged(auth, async (user) => {
                 if (user) {
                     userId = user.uid;
-                    initializeUI();
+                    // Llama a la lógica de la interfaz SOLO cuando tenemos un ID de usuario válido
+                    initializeUI(); 
                 } else {
-                    // Intento de inicio de sesión anónima
+                    // Intento de inicio de sesión anónima (necesario para Firestore)
                     try {
                         const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
                         if (token) {
@@ -877,7 +892,7 @@
                         }
                     } catch (error) {
                         console.error("Error de autenticación inicial:", error);
-                        customAlert("Error de Auth", "No se pudo iniciar la sesión de usuario.");
+                        customAlert("Error de Auth", "No se pudo iniciar la sesión de usuario. Revisa las credenciales de Firebase.");
                     }
                 }
             });
