@@ -201,7 +201,25 @@
 
         // Global Firebase and App State Variables
         setLogLevel('Debug');
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        
+        // --- Configuración de Firebase para GitHub Pages ---
+        // ¡IMPORTANTE! Reemplaza los valores 'TU_...' con los datos de tu consola de Firebase.
+        const GH_PAGES_FIREBASE_CONFIG = {
+            apiKey: "TU_API_KEY", 
+            authDomain: "TU_PROJECT_ID.firebaseapp.com",
+            projectId: "TU_PROJECT_ID", // <- Reemplaza este
+            storageBucket: "TU_PROJECT_ID.appspot.com",
+            messagingSenderId: "TU_SENDER_ID",
+            appId: "TU_APP_ID",
+            measurementId: "TU_MEASUREMENT_ID"
+        };
+        
+        // Determinar qué configuración usar
+        const firebaseConfig = (typeof __firebase_config !== 'undefined' && __firebase_config !== '{}') 
+            ? JSON.parse(__firebase_config) 
+            : GH_PAGES_FIREBASE_CONFIG;
+            
+        // El appId se usa para la ruta de la base de datos y debe ser el mismo en ambos entornos.
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'secure-chat-v1';
 
         let app;
@@ -871,6 +889,11 @@
         // --- Inicialización Principal de Firebase ---
 
         window.onload = function() {
+            // Asegúrate de que GH_PAGES_FIREBASE_CONFIG tiene el projectId
+            if (!firebaseConfig.projectId) {
+                return customAlert("ERROR CRÍTICO", "El ID del proyecto de Firebase (projectId) no ha sido configurado. Por favor, edita el código fuente de index.html.");
+            }
+
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
@@ -884,15 +907,11 @@
                 } else {
                     // Intento de inicio de sesión anónima (necesario para Firestore)
                     try {
-                        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                        if (token) {
-                            await signInWithCustomToken(auth, token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
+                        // NO USAMOS __initial_auth_token en GitHub Pages, solo signInAnonymously
+                        await signInAnonymously(auth);
                     } catch (error) {
                         console.error("Error de autenticación inicial:", error);
-                        customAlert("Error de Auth", "No se pudo iniciar la sesión de usuario. Revisa las credenciales de Firebase.");
+                        customAlert("Error de Auth", "No se pudo iniciar la sesión de usuario anónima. Revisa las reglas de seguridad de Firebase.");
                     }
                 }
             });
