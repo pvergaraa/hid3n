@@ -211,13 +211,44 @@
         appId: "1:411702105463:web:66a0c6bc69559cf190bd72"
         };
 
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
+        // CÓDIGO CORREGIDO
+// ----------------------------
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app); // Inicializar Auth
+const db = getFirestore(app); // Inicializar Firestore
 
-        setLogLevel('error'); // Cambiado a 'error' para reducir ruido en la consola
-        let app;
-        let db;
-        let auth;
+setLogLevel('error'); // Opcional, para debug
+
+let userId = null; // Mantenemos las variables de estado
+let roomId = null;
+let symmetricKey = null;
+let pinHash = null;
+
+// Los listener (onAuthStateChanged) deben inicializarse aquí.
+onAuthStateChanged(auth, (user) => {
+    if (user) {
+        userId = user.uid;
+        // Iniciar la sesión anónima si no está iniciada.
+        // Si ya está iniciada, continuar con la UI.
+        initializeUI();
+    } else {
+        // Intentar iniciar sesión anónima si no hay usuario
+        signInAnonymously(auth)
+            .then(() => {
+                // Autenticación anónima exitosa
+            })
+            .catch((error) => {
+                // Mostrar el error de autenticación si falla
+                console.error("Error al iniciar sesión anónima:", error);
+                customAlert("Error de Auth", "No se pudo iniciar la sesión anónima de Firebase. Revisa tu conexión y las reglas de seguridad.");
+                // Opcionalmente, mostrar una pantalla vacía con el mensaje de error
+            });
+    }
+});
+
+
+        
         let userId = null;
         let roomId = null; // El código de 12 caracteres / Fuente de derivación de clave
 
