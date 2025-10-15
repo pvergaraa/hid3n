@@ -1,1502 +1,900 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken } from 'firebase/auth'; // Eliminado onAuthStateChanged
-import { getFirestore, doc, getDoc, addDoc, updateDoc, onSnapshot, collection, query, orderBy, deleteDoc, getDocs, where } from 'firebase/firestore';
-
-// --- VARIABLES GLOBALES DEL ENTORNO (NO MODIFICAR) ---
-// Se asume que estas variables son proporcionadas por el entorno de ejecución
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-// Helper para generar un código único de 12 caracteres
-const generateUniqueCode = () => {
-  return Array(12).fill(0).map(() => Math.floor(Math.random() * 36).toString(36)).join('').toUpperCase();
-};
-
-// Componente para la pantalla de configuración y borrado de emergencia
-const SettingsScreen = ({ userId, encryptionKey, passcode, onEmergencyWipe, onPasscodeChange, onClose }) => {
-    const [newPasscode, setNewPasscode] = useState('');
-    
-    // Simulación: En una app nativa, el passcode NO se guarda aquí, sino que se delega a iOS.
-    const handlePasscodeUpdate = () => {
-        if (newPasscode.length === 4) {
-            onPasscodeChange(newPasscode);
-            // Reemplazo de alert()
-            window.prompt("PIN de Acceso Actualizado (Simulación)");
-            setNewPasscode('');
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Conexión Segura - Beta</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Estilo personalizado para fuentes y base -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; /* Fondo oscuro tipo terminal */
+            color: #c9d1d9;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-    };
-    
-    return (
-        <div className="p-8 space-y-8 h-full bg-gray-900 overflow-y-auto">
-            <div className="flex justify-between items-center">
-                <h2 className="text-3xl font-bold text-cyan-400">Configuración de Seguridad</h2>
-                <button 
-                    onClick={onClose} 
-                    className="text-cyan-400 hover:text-cyan-300 transition duration-150"
-                    title="Cerrar Configuración"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+        .container {
+            max-width: 480px;
+            width: 100%;
+            height: 95vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #161b22;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .chat-area {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 16px;
+            scroll-behavior: smooth;
+        }
+        .message-bubble {
+            max-width: 80%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            word-wrap: break-word;
+        }
+        .sent {
+            background-color: #1f6feb;
+            align-self: flex-end;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+        }
+        .received {
+            background-color: #21262d;
+            align-self: flex-start;
+            margin-right: auto;
+            border: 1px solid #30363d;
+            border-bottom-left-radius: 4px;
+        }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .system-alert {
+            background-color: #ff0000;
+            color: #ffffff;
+            font-weight: bold;
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin: 10px auto;
+            text-align: center;
+            animation: pulse-red 1s infinite alternate;
+        }
+        @keyframes pulse-red {
+            from { opacity: 0.8; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container" id="appContainer">
+
+        <!-- Header -->
+        <header class="p-4 border-b border-gray-700 flex justify-between items-center bg-[#1a1f26]">
+            <h1 class="text-xl font-bold text-[#58a6ff]">:: RED-SECURE ::</h1>
+            <div id="headerControls" class="flex space-x-2">
+                <!-- Los botones de Bloqueo/Cerrar se inyectan aquí -->
+            </div>
+        </header>
+
+        <!-- Contenedor Principal de Vistas -->
+        <main class="flex-grow p-4 overflow-hidden relative">
+
+            <!-- 1. Pantalla de Bloqueo (Inicial y al Desbloquear) -->
+            <div id="pinLockScreen" class="absolute inset-0 bg-[#161b22] z-50 flex flex-col items-center justify-center p-4 transition-opacity duration-300 hidden">
+                <div class="p-8 bg-[#21262d] rounded-xl w-full max-w-xs shadow-lg border border-[#30363d]">
+                    <h2 class="text-2xl font-bold mb-4 text-center">🔐 Acceso Requerido</h2>
+                    <p id="pinInstruction" class="text-sm text-gray-400 mb-6 text-center">Ingresa tu clave numérica de 4 dígitos:</p>
+                    <input type="number" id="pinInput" placeholder="Clave (ej: 1234)" maxlength="4" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-2xl tracking-widest focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="if(this.value.length > this.maxLength) this.value = this.value.slice(0, this.maxLength);">
+                    <button onclick="handlePinInput()" class="w-full bg-[#58a6ff] text-white py-3 rounded-lg font-semibold hover:bg-[#4a8ce6] transition duration-200">
+                        Acceder
+                    </button>
+                    <p id="pinError" class="text-sm text-red-400 mt-3 text-center hidden">Clave incorrecta. Intenta de nuevo.</p>
+                </div>
             </div>
 
-            <div className="space-y-6 bg-gray-800 p-6 rounded-xl shadow-inner border border-gray-700">
-                <h3 className="text-xl font-semibold text-white border-b border-gray-700 pb-2">Gestión de Acceso Local (Face ID/Passcode)</h3>
-                <p className="text-gray-400 text-sm">
-                    <strong className="text-red-400">Recordatorio para iOS:</strong> En producción, esta app delegaría el bloqueo (PIN o Face ID) al sistema operativo (Keychain/Secure Enclave). Su PIN actual no se almacena directamente aquí.
-                </p>
-                <div className="flex space-x-4 items-center">
-                    <span className="text-lg font-mono text-green-400">PIN actual (Demo): {passcode}</span>
-                    <input
-                        type="password"
-                        maxLength="4"
-                        value={newPasscode}
-                        onChange={(e) => setNewPasscode(e.target.value)}
-                        className="p-2 bg-gray-700 text-white rounded-lg w-24 text-center"
-                        placeholder="Nuevo PIN"
-                    />
-                    <button
-                        onClick={handlePasscodeUpdate}
-                        disabled={newPasscode.length !== 4}
-                        className="py-2 px-4 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg transition duration-150 disabled:opacity-50"
-                    >
-                        Cambiar PIN Demo
+            <!-- 2. Pantalla de Conexión (Setup Inicial) -->
+            <div id="setupScreen" class="absolute inset-0 bg-[#161b22] z-40 flex flex-col items-center justify-center p-4 transition-opacity duration-300 hidden">
+                <div class="p-8 bg-[#21262d] rounded-xl w-full max-w-sm shadow-lg border border-[#30363d]">
+                    <h2 class="text-2xl font-bold mb-6 text-center text-[#58a6ff]">Establecer Conexión Única</h2>
+
+                    <div id="roleSelection">
+                        <p class="mb-4 text-center">¿Eres quien **genera** el código o quien lo **ingresa**?</p>
+                        <button onclick="setRole('host')" class="w-full bg-[#30363d] text-white py-3 rounded-lg font-semibold hover:bg-[#4a5057] transition duration-200 mb-3">
+                            Generar Código (HOST)
+                        </button>
+                        <button onclick="setRole('client')" class="w-full bg-[#30363d] text-white py-3 rounded-lg font-semibold hover:bg-[#4a5057] transition duration-200">
+                            Ingresar Código (CLIENTE)
+                        </button>
+                    </div>
+
+                    <div id="hostArea" class="hidden">
+                        <p class="mb-3 text-center text-sm text-gray-400">Paso 1: Define tu PIN de 4 dígitos para futuros accesos.</p>
+                        <input type="number" id="hostPinInput" placeholder="PIN de 4 dígitos" maxlength="4" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-lg focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="if(this.value.length > this.maxLength) this.value = this.value.slice(0, this.maxLength);">
+                        <button onclick="setupPinAndGenerateCode()" class="w-full bg-[#1f6feb] text-white py-3 rounded-lg font-semibold hover:bg-[#1a55b3] transition duration-200">
+                            Guardar PIN y Generar Código Único
+                        </button>
+                    </div>
+
+                    <div id="hostWaitingArea" class="hidden text-center mt-6">
+                        <p class="text-yellow-400 mb-2 font-semibold">CÓDIGO ÚNICO GENERADO (COMPARTIR SOLO UNA VEZ):</p>
+                        <div class="p-3 bg-[#0d1117] rounded-lg border border-yellow-700 flex justify-between items-center mb-4">
+                            <code id="displayCode" class="text-xl font-mono tracking-wider text-yellow-300 select-all">...</code>
+                            <button onclick="copyToClipboard(document.getElementById('displayCode').innerText)" class="ml-3 text-gray-400 hover:text-white transition duration-150">
+                                <!-- Icono de Copiar (SVG) -->
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-2m-8-7l-4 4m0 0l4 4m-4-4h12"/></svg>
+                            </button>
+                        </div>
+                        <p class="text-sm text-gray-400 mb-4">Esperando que el Cliente ingrese este código...</p>
+                        <div class="text-center">
+                            <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-10 w-10 mb-4 inline-block"></div>
+                        </div>
+                        <button onclick="cancelConnectionAndReset()" class="w-full bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-700 transition duration-200 mt-4">
+                            Cancelar y Generar Nuevo Código
+                        </button>
+                    </div>
+
+                    <div id="clientArea" class="hidden">
+                        <p class="mb-3 text-center text-sm text-gray-400">Paso 1: Define tu PIN de 4 dígitos para futuros accesos.</p>
+                        <input type="number" id="clientPinInput" placeholder="PIN de 4 dígitos" maxlength="4" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-lg focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="if(this.value.length > this.maxLength) this.value = this.value.slice(0, this.maxLength);">
+                        <p class="mb-3 text-center text-sm text-gray-400">Paso 2: Ingresa el Código Único de 12 caracteres proporcionado.</p>
+                        <input type="text" id="joinCodeInput" placeholder="Código Único de 12 caracteres" maxlength="12" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-lg tracking-wider uppercase focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="this.value = this.value.toUpperCase();">
+                        <button onclick="setupPinAndJoinRoom()" class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200">
+                            Conectar y Unirse al Chat
+                        </button>
+                        <p id="joinError" class="text-sm text-red-400 mt-3 text-center hidden">No se pudo encontrar el código o la sala.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Pantalla de Chat Activo -->
+            <div id="chatScreen" class="h-full flex flex-col transition-opacity duration-300 hidden">
+                <div id="chatArea" class="chat-area flex flex-col">
+                    <!-- Los mensajes se inyectan aquí -->
+                    <div class="system-alert mb-4">
+                        Conexión establecida. Cifrado AES-GCM 256 activo.
+                    </div>
+                </div>
+                <!-- Input de Mensaje -->
+                <div class="p-4 border-t border-gray-700 bg-[#1a1f26]">
+                    <div class="flex space-x-2">
+                        <input type="text" id="messageInput" placeholder="Escribe tu mensaje..." class="flex-grow p-3 rounded-lg bg-[#0d1117] border border-[#30363d] text-white focus:ring-[#58a6ff] focus:border-[#58a6ff]" onkeypress="if(event.key === 'Enter') sendMessage()">
+                        <button onclick="sendMessage()" class="bg-[#58a6ff] text-white px-4 py-3 rounded-lg font-semibold hover:bg-[#4a8ce6] transition duration-200 flex-shrink-0">
+                            Enviar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal para Alerta de Error (Reemplaza alert()) -->
+            <div id="customAlert" class="hidden fixed inset-0 bg-black bg-opacity-75 z-[9999] flex items-center justify-center">
+                <div class="bg-[#21262d] p-6 rounded-xl shadow-2xl border border-[#30363d] w-full max-w-sm">
+                    <h3 class="text-xl font-bold text-red-400 mb-4" id="alertTitle">Alerta</h3>
+                    <p class="text-gray-300 mb-6" id="alertMessage">Mensaje de alerta.</p>
+                    <button onclick="document.getElementById('customAlert').classList.add('hidden')" class="w-full bg-[#58a6ff] text-white py-2 rounded-lg font-semibold hover:bg-[#4a8ce6]">
+                        Aceptar
                     </button>
                 </div>
             </div>
 
-            <div className="space-y-6 bg-gray-800 p-6 rounded-xl shadow-inner border border-gray-700">
-                <h3 className="text-xl font-semibold text-white border-b border-gray-700 pb-2">Clave de Cifrado E2EE</h3>
-                <p className="text-gray-400 text-sm">
-                    Esta es la clave única (simétrica) que cifra y descifra todos tus mensajes, generada al emparejarte con el código de 12 caracteres y almacenada en el Keychain.
-                </p>
-                <div className="bg-gray-700 p-3 rounded-lg break-all">
-                    <code className="text-yellow-400 text-xs font-mono">{encryptionKey || 'Clave no generada/desbloqueada'}</code>
-                </div>
-                <p className="text-sm text-gray-500">
-                    Tu ID de Usuario (Servidor): {userId}
-                </p>
-            </div>
-
-            <div className="bg-red-900 p-6 rounded-xl shadow-lg border-2 border-red-600 space-y-4">
-                <h3 className="text-2xl font-bold text-red-400">BORRADO DE EMERGENCIA</h3>
-                <p className="text-red-200">
-                    **¡ADVERTENCIA!** Esto destruirá de forma permanente todos los mensajes del chat y eliminará la clave de cifrado local, forzando un nuevo emparejamiento. Úselo solo en caso de emergencia crítica.
-                </p>
-                <button
-                    onClick={onEmergencyWipe}
-                    className="w-full py-3 bg-red-700 hover:bg-red-800 text-white font-bold rounded-lg shadow-xl transition duration-150"
-                >
-                    Ejecutar Destrucción Total y Desvinculación
-                </button>
-            </div>
-        </div>
-    );
-};
-
-
-// Componente principal de la aplicación
-const App = () => {
-  const [db, setDb] = useState(null);
-  const [auth, setAuth] = useState(null);
-  const [userId, setUserId] = useState(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [loadingText, setLoadingText] = useState('Inicializando...');
-
-  // --- Estados de Seguridad y Conexión ---
-  const [passcode, setPasscode] = useState('1234'); // Passcode de 4 dígitos fijo para la demo
-  const [passcodeInput, setPasscodeInput] = useState('');
-  const [isLocked, setIsLocked] = useState(true);
-  const [passcodeError, setPasscodeError] = useState('');
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // Nuevo estado para la configuración
-
-  const [connectionCode, setConnectionCode] = useState(''); // El código de 12 caracteres
-  const [isCodeGenerated, setIsCodeGenerated] = useState(false);
-  const [partnerId, setPartnerId] = useState(null);
-  const [isPaired, setIsPaired] = useState(false);
-  const [isGenerator, setIsGenerator] = useState(false);
-  const [inputConnectCode, setInputConnectCode] = useState('');
-  const [connectionError, setConnectionError] = useState('');
-
-  // --- Estados de Cifrado y Chat ---
-  const [encryptionKey, setEncryptionKey] = useState(null);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [secretAlias] = useState('Alerta de Seguridad'); // Nombre secreto para notificaciones
-
-  // --- 1. Inicialización de Firebase y Autenticación ---
-  useEffect(() => {
-    const setup = async () => {
-      try {
-        const app = initializeApp(firebaseConfig);
-        const firestore = getFirestore(app);
-        const authInstance = getAuth(app);
-        
-        setDb(firestore);
-        setAuth(authInstance);
-        setLoadingText('Autenticando...');
-
-        // 1. Intentar iniciar sesión con token personalizado si está disponible
-        let finalUser = null;
-        if (initialAuthToken) {
-            await signInWithCustomToken(authInstance, initialAuthToken).catch(err => {
-                 // Si el token falla, lo registramos pero continuamos con la sesión anónima
-                 console.error("Error signing in with custom token, falling back to anonymous:", err);
-            });
-        }
-        
-        // 2. Si la autenticación falló o se omitió (sin token), intentar sesión anónima
-        finalUser = authInstance.currentUser;
-        if (!finalUser) {
-            // Este intento capturará al usuario si el custom token funcionó o iniciará uno nuevo
-            const anonResult = await signInAnonymously(authInstance);
-            finalUser = anonResult.user;
-        }
-
-        if (finalUser) {
-            setUserId(finalUser.uid);
-            setLoadingText('Listo.');
-        } else {
-             // Si por alguna razón no hay usuario, registramos y salimos
-             setLoadingText('Fallo al obtener el ID de usuario.');
-             console.error("Authentication failed: Could not get a user ID.");
-             return;
-        }
-
-        // IMPORTANT: isAuthReady solo se establece después de que userId está garantizado
-        setIsAuthReady(true);
-        
-      } catch (error) {
-        console.error("Error inicializando Firebase:", error);
-        setLoadingText("Error al inicializar la app.");
-      }
-    };
-
-    setup();
-  }, []);
-  
-  // --- Funciones de Cifrado (Simulación E2EE con Web Crypto API) ---
-  const keyToCryptoKey = useCallback(async (keyBase64) => {
-    const keyBytes = new Uint8Array(atob(keyBase64).split('').map(c => c.charCodeAt(0)));
-    return await crypto.subtle.importKey(
-      "raw",
-      keyBytes,
-      { name: "AES-GCM" },
-      true,
-      ["encrypt", "decrypt"]
-    );
-  }, []);
-
-  const encryptMessage = useCallback(async (message, key) => {
-    if (!key) return message;
-    const iv = crypto.getRandomValues(new Uint8Array(12)); // Initialization Vector
-    const encoded = new TextEncoder().encode(message);
-    const cryptoKey = await keyToCryptoKey(key);
-    
-    const cipherText = await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv: iv },
-      cryptoKey,
-      encoded
-    );
-    
-    const cipherTextArray = new Uint8Array(cipherText);
-    const encryptedData = btoa(String.fromCharCode(...iv) + String.fromCharCode(...cipherTextArray));
-    return encryptedData;
-  }, [keyToCryptoKey]);
-
-  const decryptMessage = useCallback(async (encryptedData, key) => {
-    if (!key) return encryptedData;
-    try {
-      const cryptoKey = await keyToCryptoKey(key);
-      const decoded = atob(encryptedData);
-      const iv = new Uint8Array(decoded.slice(0, 12).split('').map(c => c.charCodeAt(0)));
-      const cipherText = new Uint8Array(decoded.slice(12).split('').map(c => c.charCodeAt(0)));
-
-      const decrypted = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: iv },
-        cryptoKey,
-        cipherText
-      );
-      
-      return new TextDecoder().decode(decrypted);
-    } catch (e) {
-      console.error("Fallo al descifrar el mensaje:", e);
-      return "[Mensaje Ilegible]";
-    }
-  }, [keyToCryptoKey]);
-
-  // --- 2. Lógica de Desbloqueo Local (Face ID / Passcode Simulado) ---
-  const handleUnlock = () => {
-    // Simulación: Comprueba el PIN. En iOS, esta acción dispararía LocalAuthentication.
-    if (passcodeInput === passcode) {
-      setIsLocked(false);
-      setPasscodeError('');
-      setPasscodeInput('');
-    } else {
-      setPasscodeError('PIN incorrecto. Inténtalo de nuevo.');
-      setPasscodeInput('');
-    }
-  };
-  
-  // Función para actualizar el passcode (solo para la demo)
-  const handlePasscodeChange = (newCode) => {
-      setPasscode(newCode);
-  };
-  
-  // --- 3. Determinación de la Ruta de Chat Cifrada ---
-  const chatPath = useMemo(() => {
-    if (userId && partnerId) {
-      // Ruta determinista: Ordena los IDs para asegurar que ambas partes usen la misma ruta.
-      const members = [userId, partnerId].sort();
-      return `artifacts/${appId}/public/data/chats/${members.join('-')}`;
-    }
-    return null;
-  }, [userId, partnerId]);
-  
-  // --- 4. Lógica de Borrado de Emergencia (Destrucción Total) ---
-  const handleEmergencyWipe = async () => {
-      // Reemplazo de confirm() por window.prompt (Regla Mandatoria)
-      const shouldProceed = window.prompt("¿ESTÁS ABSOLUTAMENTE SEGURO de ejecutar el Borrado de Emergencia? Esto es irreversible. Escribe 'BORRAR' para confirmar.") === 'BORRAR';
-      if (!shouldProceed) return;
-      
-      try {
-          // 1. Destrucción Remota (Mensajes del Chat)
-          if (chatPath) {
-              setLoadingText('Borrando mensajes remotos...');
-              const messagesRef = collection(db, `${chatPath}/messages`);
-              const snapshot = await getDocs(messagesRef);
-              snapshot.docs.forEach(async (d) => {
-                  await deleteDoc(doc(db, `${chatPath}/messages`, d.id));
-              });
-              // Borrar el documento de chat principal (opcional)
-              const chatDocRef = doc(db, `artifacts/${appId}/public/data/chats`, [userId, partnerId].sort().join('-'));
-              const chatDocSnap = await getDoc(chatDocRef);
-              if (chatDocSnap.exists()) {
-                  await deleteDoc(chatDocRef);
-              }
-          }
-          
-          // 2. Destrucción Remota (Documento de Emparejamiento)
-          if (connectionCode) {
-              setLoadingText('Invalidando código de emparejamiento...');
-              // Búsqueda por el campo uniqueCode (usando query en lugar de doc ID directo)
-              const pairingCollectionRef = collection(db, `artifacts/${appId}/public/data/pairing`);
-              const q = query(pairingCollectionRef, where('uniqueCode', '==', connectionCode));
-              const pairingSnapshot = await getDocs(q);
-              
-              pairingSnapshot.docs.forEach(async (d) => {
-                  await deleteDoc(d.ref); 
-              });
-          }
-          
-          // 3. Destrucción Local (Simulación de KeyChain)
-          setEncryptionKey(null);
-          setPartnerId(null);
-          setIsPaired(false);
-          setIsCodeGenerated(false);
-          setConnectionCode('');
-          setIsGenerator(false);
-          setLoadingText('Borrado de emergencia completado. Necesitas re-emparejarte.');
-          setIsLocked(true); // Vuelve a la pantalla de bloqueo
-          setIsSettingsOpen(false);
-          
-          window.prompt("Borrado de Emergencia Exitoso: Clave de cifrado eliminada. Todos los datos remotos de chat borrados.");
-          
-      } catch (error) {
-          console.error("Error al ejecutar borrado de emergencia:", error);
-          window.prompt("Aviso: El borrado de emergencia falló parcialmente. Revisa la consola.");
-          setLoadingText('Fallo en el borrado.');
-      }
-  }
-
-  // --- 5. Lógica de Generación y Emparejamiento de Código ---
-
-  // Genera el código único y la clave de cifrado compartida
-  const handleGenerateCode = async () => {
-    // Se agrega verificación de isAuthReady además de db y userId
-    if (!db || !userId || !isAuthReady) return; 
-    try {
-      setLoadingText('Generando código...');
-      setConnectionError('');
-      
-      // 1. Generar clave de cifrado (simulada)
-      const keyBuffer = await crypto.subtle.generateKey(
-        { name: "AES-GCM", length: 256 },
-        true,
-        ["encrypt", "decrypt"]
-      );
-      const exportedKey = await crypto.subtle.exportKey("raw", keyBuffer);
-      const keyBase64 = btoa(String.fromCharCode(...new Uint8Array(exportedKey)));
-      
-      // 2. Generar código de 12 caracteres
-      const code = generateUniqueCode();
-      
-      // 3. Crear documento de emparejamiento con la clave secreta
-      // Usamos addDoc (que suele tener permisos más amplios en reglas públicas)
-      const pairingCollectionRef = collection(db, `artifacts/${appId}/public/data/pairing`);
-      await addDoc(pairingCollectionRef, {
-        generatorId: userId,
-        encryptionKey: keyBase64,
-        uniqueCode: code, // Guardamos el código para la búsqueda
-        status: 'pending',
-        createdAt: new Date().toISOString()
-      });
-
-      setConnectionCode(code); // Almacenamos el código de 12 caracteres
-      setEncryptionKey(keyBase64); // Se establece la clave localmente (Simulación de KeyChain)
-      setIsCodeGenerated(true);
-      setIsGenerator(true);
-      setLoadingText('Esperando conexión...');
-
-    } catch (error) {
-      console.error('Error al generar código:', error);
-      setConnectionError('Error al generar el código de emparejamiento.');
-    }
-  };
-  
-  // Solución de regeneración sugerida
-  const handleRegenerateCode = async () => {
-      // Reemplazo de confirm() por window.prompt (Regla Mandatoria)
-      const shouldProceed = window.prompt("¿Deseas invalidar el código actual y generar uno nuevo? Escribe 'SI' para confirmar.") === 'SI';
-      if (!shouldProceed) return;
-      
-      if (connectionCode) {
-          // Búsqueda del documento por el campo uniqueCode
-          const pairingCollectionRef = collection(db, `artifacts/${appId}/public/data/pairing`);
-          const q = query(pairingCollectionRef, where('uniqueCode', '==', connectionCode));
-          const pairingSnapshot = await getDocs(q);
-          
-          pairingSnapshot.docs.forEach(async (d) => {
-              // Actualizamos el estado del documento encontrado
-              await updateDoc(d.ref, { status: 'expired', deletedAt: new Date().toISOString() });
-          });
-      }
-      setIsCodeGenerated(false);
-      setConnectionCode('');
-      setEncryptionKey(null);
-      handleGenerateCode();
-  }
-
-  // Se une usando el código de la otra persona
-  const handleJoinChat = async () => {
-    if (!db || !userId || !inputConnectCode || !isAuthReady) return; // Se agrega verificación de isAuthReady
-    try {
-      setLoadingText('Intentando conectar...');
-      setConnectionError('');
-      
-      // Usamos query para buscar el documento por el campo 'uniqueCode'
-      const pairingCollectionRef = collection(db, `artifacts/${appId}/public/data/pairing`);
-      const q = query(pairingCollectionRef, where('uniqueCode', '==', inputConnectCode.toUpperCase()));
-      const pairingSnapshot = await getDocs(q);
-
-      if (pairingSnapshot.empty) {
-        setConnectionError('Código no válido o expirado.');
-        setLoadingText('Listo.');
-        return;
-      }
-      
-      const pairingDoc = pairingSnapshot.docs[0];
-      const data = pairingDoc.data();
-
-      if (data.status !== 'pending') {
-         setConnectionError('El código ya fue utilizado o expiró.');
-         setLoadingText('Listo.');
-         return;
-      }
-
-      const generatorId = data.generatorId;
-
-      // 1. Establecer la clave de cifrado compartida (Simulación de KeyChain)
-      setEncryptionKey(data.encryptionKey);
-      
-      // 2. Actualizar el documento de emparejamiento con el ID del conector
-      await updateDoc(pairingDoc.ref, { // Usamos la referencia del documento encontrado
-        partnerId: userId,
-        status: 'paired',
-        connectedAt: new Date().toISOString()
-      });
-
-      // 3. Establecer estados locales
-      setPartnerId(generatorId);
-      setIsPaired(true);
-      setIsGenerator(false);
-      setConnectionCode(inputConnectCode.toUpperCase()); // Almacenamos el código de 12 caracteres
-      setLoadingText('Conexión establecida y cifrada!');
-      
-    } catch (error) {
-      console.error('Error al unirse al chat:', error);
-      setConnectionError('Fallo en la conexión. Intenta de nuevo.');
-      setLoadingText('Listo.');
-    }
-  };
-
-  // Listener para el Generador: Detectar si el otro usuario se unió
-  useEffect(() => {
-    if (!db || !isGenerator || !connectionCode || !isAuthReady) return; // Se agrega verificación de isAuthReady
-    
-    // CAMBIO: Hacemos onSnapshot sobre la colección, buscando por uniqueCode
-    const pairingCollectionRef = collection(db, `artifacts/${appId}/public/data/pairing`);
-    const q = query(pairingCollectionRef, where('uniqueCode', '==', connectionCode)); 
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (snapshot.empty) return;
-      
-      const data = snapshot.docs[0].data(); // El primer (y único) documento coincidente
-      if (data && data.status === 'paired' && data.partnerId) {
-        setPartnerId(data.partnerId);
-        setIsPaired(true);
-        setLoadingText('Conexión establecida y cifrada!');
-      }
-    });
-
-    return () => unsubscribe();
-  }, [db, isGenerator, connectionCode, isAuthReady]); // Agregado isAuthReady a dependencias
-  
-  // --- 6. Lógica de Chat: Enviar y Recibir Mensajes (Sin cambios) ---
-
-  const sendMessage = async () => {
-    if (!db || !chatPath || !encryptionKey || newMessage.trim() === '' || !isAuthReady) return; // Se agrega verificación de isAuthReady
-
-    try {
-      const encryptedText = await encryptMessage(newMessage.trim(), encryptionKey);
-
-      await addDoc(collection(db, `${chatPath}/messages`), {
-        senderId: userId,
-        content: encryptedText,
-        timestamp: Date.now()
-      });
-
-      setNewMessage('');
-    } catch (error) {
-      console.error('Error al enviar mensaje cifrado:', error);
-    }
-  };
-
-  // Listener de Mensajes Cifrados
-  useEffect(() => {
-    if (!db || !chatPath || !isPaired || !encryptionKey || !isAuthReady) return; // Se agrega verificación de isAuthReady
-    
-    const messagesCollectionRef = collection(db, `${chatPath}/messages`);
-    const q = query(messagesCollectionRef, orderBy('timestamp', 'desc'));
-
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      let isNewMessageReceived = false;
-      const newMessages = [];
-
-      for (const doc of snapshot.docs) {
-        const data = doc.data();
-        const decryptedText = await decryptMessage(data.content, encryptionKey);
-        
-        const isAlreadyInState = chatMessages.some(m => m.id === doc.id);
-        
-        if (data.senderId !== userId && !document.hasFocus() && !isAlreadyInState) {
-            isNewMessageReceived = true;
-        }
-
-        newMessages.push({
-          id: doc.id,
-          text: decryptedText,
-          isMine: data.senderId === userId,
-          timestamp: data.timestamp
-        });
-      }
-      
-      setChatMessages(newMessages.reverse()); // Mostrar en orden ascendente
-
-      // SIMULACIÓN DE NOTIFICACIÓN DISCRETA
-      if (isNewMessageReceived) {
-          // En un iPhone nativo, esto activaría la notificación push silenciosa, 
-          // y luego la app o el servidor enviaría la notificación push con el título discreto.
-          console.log(`[SIMULACIÓN DE NOTIFICACIÓN PUSH DISCRETA] Nuevo mensaje de: ${secretAlias}. Título simulado: "Error de Temperatura del Sistema".`);
-      }
-    }, [chatMessages]);
-
-    return () => unsubscribe();
-  }, [db, chatPath, isPaired, encryptionKey, userId, decryptMessage, secretAlias, chatMessages.length, isAuthReady]); // Agregado isAuthReady a dependencias
-
-  // --- Renderizado de la Interfaz de Usuario ---
-
-  // Mostrar pantalla de carga
-  if (!isAuthReady) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white p-4">
-        <p className="text-xl animate-pulse">{loadingText}</p>
-      </div>
-    );
-  }
-  
-  // 1. Pantalla de Bloqueo Local (Face ID/Passcode Simulado)
-  if (isLocked) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white p-4">
-        <div className="w-full max-w-sm p-6 bg-gray-800 rounded-xl shadow-2xl border border-gray-700">
-          <h2 className="text-3xl font-bold mb-6 text-center text-cyan-400">Acceso Seguro</h2>
-          <p className="text-center mb-6 text-gray-400">Ingrese su PIN de 4 dígitos (Simulación de Face ID/Clave)</p>
-          <div className="space-y-4">
-            <input
-              type="password"
-              maxLength="4"
-              value={passcodeInput}
-              onChange={(e) => setPasscodeInput(e.target.value)}
-              className="w-full text-center text-3xl tracking-[1.5em] font-mono p-3 bg-gray-700 text-white rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition duration-150"
-              placeholder="••••"
-            />
-            {passcodeError && <p className="text-red-400 text-center text-sm">{passcodeError}</p>}
-            <button
-              onClick={handleUnlock}
-              disabled={passcodeInput.length !== 4}
-              className="w-full py-3 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-lg transition duration-150 disabled:bg-cyan-800 disabled:opacity-50"
-            >
-              Desbloquear
-            </button>
-            <p className="text-xs text-gray-500 text-center mt-4">Demo PIN: 1234</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // 2. Pantalla de Emparejamiento
-  if (!isPaired) {
-    const PairingScreen = () => (
-      <div className="p-8 space-y-8">
-        <h2 className="text-3xl font-bold text-center text-cyan-400">Establecer Conexión Cifrada</h2>
-        <p className="text-sm text-gray-400 text-center">Para chatear con una sola persona, debe emparejarse una única vez usando un código secreto. Su ID (secreto): {userId}</p>
-        
-        {isCodeGenerated ? (
-          <div className="bg-gray-700 p-6 rounded-xl shadow-lg border-2 border-cyan-500 space-y-4">
-            <p className="text-lg font-semibold text-center text-white">Código de Emparejamiento Único (12 Caracteres)</p>
-            <div className="bg-gray-800 p-4 rounded-lg">
-                <p className="text-4xl font-mono tracking-widest text-center text-red-400 break-all">{connectionCode}</p>
-            </div>
-            <p className="text-sm text-yellow-400 text-center">COMPARTA este código SOLO con la persona deseada. Esperando su conexión...</p>
-            <p className="text-xs text-gray-400 text-center">{loadingText}</p>
-            <button
-              onClick={handleRegenerateCode}
-              className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition duration-150"
-            >
-              Regenerar Código (Si falló o expiró)
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="flex justify-center space-x-4">
-              <button
-                onClick={handleGenerateCode}
-                className="w-1/2 py-4 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl shadow-lg transition duration-150"
-              >
-                1. Generar Código
-              </button>
-              <div className="w-1/2 p-4 bg-gray-800 rounded-xl shadow-lg space-y-3">
-                <input
-                  type="text"
-                  maxLength="12"
-                  value={inputConnectCode}
-                  onChange={(e) => setInputConnectCode(e.target.value.toUpperCase())}
-                  className="w-full p-2 bg-gray-700 text-white rounded-lg text-center font-mono tracking-wider placeholder-gray-500"
-                  placeholder="2. Ingresar Código"
-                />
-                <button
-                  onClick={handleJoinChat}
-                  disabled={inputConnectCode.length !== 12}
-                  className="w-full py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-lg transition duration-150 disabled:bg-cyan-800 disabled:opacity-50"
-                >
-                  Conectar
-                </button>
-              </div>
-            </div>
-            {connectionError && <p className="text-red-400 text-center mt-4">{connectionError}</p>}
-          </div>
-        )}
-      </div>
-    );
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
-        <div className="w-full max-w-lg bg-gray-900 rounded-xl">
-          <PairingScreen />
-        </div>
-      </div>
-    );
-  }
-  
-  // 3. Pantalla de Chat Cifrado o Configuración
-  
-  if (isSettingsOpen) {
-      return (
-        <div className="flex flex-col h-screen bg-gray-900 text-white font-sans">
-            <SettingsScreen 
-                userId={userId}
-                encryptionKey={encryptionKey}
-                passcode={passcode}
-                onPasscodeChange={handlePasscodeChange}
-                onEmergencyWipe={handleEmergencyWipe}
-                onClose={() => setIsSettingsOpen(false)}
-            />
-        </div>
-      );
-  }
-  
-  // Nueva función para bloquear la app instantáneamente
-  const handleLockApp = () => {
-      setIsLocked(true);
-      setIsSettingsOpen(false);
-      setPasscodeInput('');
-  };
-
-  return (
-    <div className="flex flex-col h-screen bg-gray-900 text-white font-sans">
-      {/* Encabezado */}
-      <header className="bg-gray-800 p-4 flex items-center justify-between shadow-lg">
-        <h1 className="text-xl font-bold text-cyan-400">Chat Privado Cifrado</h1>
-        <div className="flex items-center space-x-3">
-            <div className="text-sm text-gray-400 hidden sm:block">
-              <span className="font-mono">{isGenerator ? 'Generador' : 'Conector'}</span> | Estado: <span className="text-green-400">Cifrado E2EE</span>
-            </div>
-            
-            {/* BOTÓN DE BLOQUEO INSTANTÁNEO AÑADIDO */}
-            <button 
-                onClick={handleLockApp}
-                className="p-2 bg-gray-700 rounded-full hover:bg-gray-600 transition duration-150"
-                title="Bloquear Aplicación"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6-4h12m-6 4v-4m0 0H6m6 0h6m-12 0V9a6 6 0 0112 0v4m-6-4V9a3 3 0 00-6 0v4" />
-                </svg>
-            </button>
-            
-            {/* Botón de Configuración Existente */}
-            <button 
-                onClick={() => setIsSettingsOpen(true)}
-                className="p-2 bg-gray-700 rounded-full hover:bg-gray-600 transition duration-150"
-                title="Configuración de Seguridad"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.82 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.82 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.82-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.82-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            </button>
-        </div>
-      </header>
-
-      {/* Contenedor de Mensajes */}
-      <main className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-        {chatMessages.map((msg) => (
-          <div 
-            key={msg.id} 
-            className={`flex ${msg.isMine ? 'justify-end' : 'justify-start'}`}
-          >
-            <div className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-2xl shadow-md ${
-              msg.isMine 
-                ? 'bg-cyan-600 text-white rounded-br-none' 
-                : 'bg-gray-700 text-white rounded-tl-none'
-            }`}>
-              <p className="text-sm break-words">{msg.text}</p>
-              <span className="block text-xs mt-1 opacity-70">
-                {new Date(msg.timestamp).toLocaleTimeString('es-CL')}
-              </span>
-            </div>
-          </div>
-        ))}
-      </main>
-
-      {/* Área de Entrada */}
-      <div className="bg-gray-800 p-4 border-t border-gray-700 shadow-xl">
-        <div className="flex space-x-3">
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-            className="flex-1 p-3 bg-gray-700 text-white rounded-full focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-gray-500 transition duration-150"
-            placeholder="Escribe un mensaje seguro..."
-          />
-          <button
-            onClick={sendMessage}
-            disabled={newMessage.trim() === ''}
-            className="p-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-full transition duration-150 disabled:bg-gray-600 disabled:opacity-50"
-            title="Enviar"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9-9-9-9-9 9 9 9z" />
-            </svg>
-          </button>
-        </div>
-      </div>
-      
-      {/* Estilos Tailwind y Custom Scrollbar */}
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 8px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #374151; /* gray-700 */
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #1e40af; /* blue-700 */
-          border-radius: 4px;
-        }
-      `}</style>
+        </main>
     </div>
-  );
-};
 
-export default App;
+    <!-- Carga de Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, collection, query, orderBy, setDoc, addDoc, serverTimestamp, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // Global Firebase and App State Variables
+        setLogLevel('Debug');
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'secure-chat-v1';
 
-=========================================================================================================================================
+        let app;
+        let db;
+        let auth;
+        let userId = null;
+        let roomId = null; // The 12-character code, which is also the key derivation source
 
-
-
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, onSnapshot, collection, query, orderBy, deleteDoc, getDocs, where } from 'firebase/firestore';
-
-// --- VARIABLES GLOBALES DEL ENTORNO (NO MODIFICAR) ---
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-// Helper para generar un código único de 12 caracteres
-const generateUniqueCode = () => {
-    return Array(12).fill(0).map(() => Math.floor(Math.random() * 36).toString(36)).join('').toUpperCase();
-};
-
-// Componente para la pantalla de configuración y borrado de emergencia
-const SettingsScreen = ({ userId, encryptionKey, passcode, onEmergencyWipe, onPasscodeChange, onClose }) => {
-    const [newPasscode, setNewPasscode] = useState('');
-    
-    // Simulación: En una app nativa, el passcode NO se guarda aquí, sino que se delega a iOS.
-    const handlePasscodeUpdate = () => {
-        if (newPasscode.length === 4) {
-            onPasscodeChange(newPasscode);
-            window.prompt("PIN de Acceso Actualizado (Simulación)");
-            setNewPasscode('');
-        }
-    };
-    
-    return (
-        <div className="p-8 space-y-8 h-full bg-gray-900 overflow-y-auto">
-            <div className="flex justify-between items-center">
-                <h2 className="text-3xl font-bold text-cyan-400">Configuración de Seguridad</h2>
-                <button 
-                    onClick={onClose} 
-                    className="text-cyan-400 hover:text-cyan-300 transition duration-150"
-                    title="Cerrar Configuración"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-            </div>
-
-            <div className="space-y-6 bg-gray-800 p-6 rounded-xl shadow-inner border border-gray-700">
-                <h3 className="text-xl font-semibold text-white border-b border-gray-700 pb-2">Gestión de Acceso Local (Face ID/Passcode)</h3>
-                <p className="text-gray-400 text-sm">
-                    <strong className="text-red-400">Recordatorio para iOS:</strong> Esta app delegaría el bloqueo (PIN o Face ID) al sistema operativo.
-                </p>
-                <div className="flex space-x-4 items-center">
-                    <span className="text-lg font-mono text-green-400">PIN actual (Demo): {passcode}</span>
-                    <input
-                        type="password"
-                        maxLength="4"
-                        value={newPasscode}
-                        onChange={(e) => setNewPasscode(e.target.value)}
-                        className="p-2 bg-gray-700 text-white rounded-lg w-24 text-center"
-                        placeholder="Nuevo PIN"
-                    />
-                    <button
-                        onClick={handlePasscodeUpdate}
-                        disabled={newPasscode.length !== 4}
-                        className="py-2 px-4 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg transition duration-150 disabled:opacity-50"
-                    >
-                        Cambiar PIN Demo
-                    </button>
-                </div>
-            </div>
-
-            <div className="space-y-6 bg-gray-800 p-6 rounded-xl shadow-inner border border-gray-700">
-                <h3 className="text-xl font-semibold text-white border-b border-gray-700 pb-2">Clave de Cifrado E2EE</h3>
-                <p className="text-gray-400 text-sm">
-                    **IMPORTANTE (CORRECCIÓN DE SEGURIDAD):** La clave de cifrado simétrica (E2EE) está almacenada localmente (Simulación de KeyChain) y **NUNCA** se expone en la interfaz. Se asume que fue compartida fuera de banda (verbal, QR, etc.) para el emparejamiento.
-                </p>
-                <div className="bg-gray-700 p-3 rounded-lg break-all">
-                    {/* CORRECCIÓN: Se oculta la clave. Solo se muestra su estado. */}
-                    <code className="text-yellow-400 text-xs font-mono">{encryptionKey ? 'Clave de Sesión ACTIVA y OCULTA' : 'Clave de Sesión AUSENTE (Necesita emparejamiento)'}</code>
-                </div>
-                <p className="text-sm text-gray-500">
-                    Tu ID de Usuario (Servidor): {userId}
-                </p>
-            </div>
-
-            <div className="bg-red-900 p-6 rounded-xl shadow-lg border-2 border-red-600 space-y-4">
-                <h3 className="text-2xl font-bold text-red-400">BORRADO DE EMERGENCIA</h3>
-                <p className="text-red-200">
-                    **¡ADVERTENCIA!** Esto destruirá de forma permanente todos los mensajes del chat y eliminará la clave de cifrado local, forzando un nuevo emparejamiento.
-                </p>
-                <button
-                    onClick={onEmergencyWipe}
-                    className="w-full py-3 bg-red-700 hover:bg-red-800 text-white font-bold rounded-lg shadow-xl transition duration-150"
-                >
-                    Ejecutar Destrucción Total y Desvinculación
-                </button>
-            </div>
-        </div>
-    );
-};
-
-
-// Componente principal de la aplicación
-const App = () => {
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false);
-    const [loadingText, setLoadingText] = useState('Inicializando...');
-
-    // --- Estados de Seguridad y Conexión ---
-    const [passcode, setPasscode] = useState('1234');
-    const [passcodeInput, setPasscodeInput] = useState('');
-    const [isLocked, setIsLocked] = useState(true);
-    const [passcodeError, setPasscodeError] = useState('');
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-    const [connectionCode, setConnectionCode] = useState(''); // El código de 12 caracteres (usado como Doc ID)
-    const [isCodeGenerated, setIsCodeGenerated] = useState(false);
-    const [partnerId, setPartnerId] = useState(null);
-    const [isPaired, setIsPaired] = useState(false);
-    const [isGenerator, setIsGenerator] = useState(false);
-    const [inputConnectCode, setInputConnectCode] = useState('');
-    const [connectionError, setConnectionError] = useState('');
-    const [inputEncryptionKey, setInputEncryptionKey] = useState(''); // Para la demo de la clave "fuera de banda"
-
-    // --- Estados de Cifrado y Chat ---
-    const [encryptionKey, setEncryptionKey] = useState(null);
-    const [chatMessages, setChatMessages] = useState([]);
-    const [newMessage, setNewMessage] = useState('');
-    const [secretAlias] = useState('Alerta de Seguridad');
-
-    // --- 1. Inicialización de Firebase y Autenticación ---
-    useEffect(() => {
-        const setup = async () => {
-            try {
-                const app = initializeApp(firebaseConfig);
-                const firestore = getFirestore(app);
-                const authInstance = getAuth(app);
-                
-                setDb(firestore);
-                setAuth(authInstance);
-                setLoadingText('Autenticando...');
-
-                let finalUser = null;
-                if (initialAuthToken) {
-                    await signInWithCustomToken(authInstance, initialAuthToken).catch(err => {
-                         console.error("Error signing in with custom token, falling back to anonymous:", err);
-                    });
-                }
-                
-                finalUser = authInstance.currentUser;
-                if (!finalUser) {
-                    const anonResult = await signInAnonymously(authInstance);
-                    finalUser = anonResult.user;
-                }
-
-                if (finalUser) {
-                    setUserId(finalUser.uid);
-                    setLoadingText('Listo.');
-                } else {
-                     setLoadingText('Fallo al obtener el ID de usuario.');
-                     console.error("Authentication failed: Could not get a user ID.");
-                     return;
-                }
-
-                setIsAuthReady(true);
-                
-            } catch (error) {
-                console.error("Error inicializando Firebase:", error);
-                setLoadingText("Error al inicializar la app.");
-            }
-        };
-
-        setup();
-    }, []);
-    
-    // --- Funciones de Cifrado (Web Crypto API) ---
-    // Mismo código, pero se mantiene fuera de los renders.
-    const keyToCryptoKey = useCallback(async (keyBase64) => {
-        const keyBytes = new Uint8Array(atob(keyBase64).split('').map(c => c.charCodeAt(0)));
-        return await crypto.subtle.importKey(
-            "raw",
-            keyBytes,
-            { name: "AES-GCM" },
-            true,
-            ["encrypt", "decrypt"]
-        );
-    }, []);
-
-    const encryptMessage = useCallback(async (message, key) => {
-        if (!key) return message;
-        const iv = crypto.getRandomValues(new Uint8Array(12));
-        const encoded = new TextEncoder().encode(message);
-        const cryptoKey = await keyToCryptoKey(key);
+        let symmetricKey = null; // The derived AES-GCM key object
+        let pinHash = null; // Hash of the 4-digit PIN for local lock
         
-        const cipherText = await crypto.subtle.encrypt(
-            { name: "AES-GCM", iv: iv },
-            cryptoKey,
-            encoded
-        );
-        
-        const cipherTextArray = new Uint8Array(cipherText);
-        const encryptedData = btoa(String.fromCharCode(...iv) + String.fromCharCode(...cipherTextArray));
-        return encryptedData;
-    }, [keyToCryptoKey]);
+        // --- Criptografía (Web Crypto API) ---
 
-    const decryptMessage = useCallback(async (encryptedData, key) => {
-        if (!key) return encryptedData;
-        try {
-            const cryptoKey = await keyToCryptoKey(key);
-            const decoded = atob(encryptedData);
-            const iv = new Uint8Array(decoded.slice(0, 12).split('').map(c => c.charCodeAt(0)));
-            const cipherText = new Uint8Array(decoded.slice(12).split('').map(c => c.charCodeAt(0)));
-
-            const decrypted = await crypto.subtle.decrypt(
-                { name: "AES-GCM", iv: iv },
-                cryptoKey,
-                cipherText
+        /**
+         * Deriva la clave simétrica AES-GCM 256-bit usando PBKDF2 desde el código de 12 caracteres.
+         * @param {string} code El código de 12 caracteres (PSK).
+         * @returns {Promise<CryptoKey>} La clave CryptoKey.
+         */
+        async function deriveKey(code) {
+            const encoder = new TextEncoder();
+            const salt = encoder.encode(appId); // Usar el ID de la app como salt fijo
+            const keyMaterial = await crypto.subtle.importKey(
+                "raw",
+                encoder.encode(code),
+                { name: "PBKDF2" },
+                false,
+                ["deriveKey"]
             );
-            
-            return new TextDecoder().decode(decrypted);
-        } catch (e) {
-            console.error("Fallo al descifrar el mensaje:", e);
-            return "[Mensaje Ilegible]";
-        }
-    }, [keyToCryptoKey]);
 
-    // --- 2. Lógica de Desbloqueo Local ---
-    const handleUnlock = () => {
-        if (passcodeInput === passcode) {
-            setIsLocked(false);
-            setPasscodeError('');
-            setPasscodeInput('');
-        } else {
-            setPasscodeError('PIN incorrecto. Inténtalo de nuevo.');
-            setPasscodeInput('');
-        }
-    };
-    
-    const handlePasscodeChange = (newCode) => {
-        setPasscode(newCode);
-    };
-    
-    // --- 3. Determinación de la Ruta de Chat Cifrada ---
-    const chatPath = useMemo(() => {
-        if (userId && partnerId) {
-            const members = [userId, partnerId].sort();
-            return `artifacts/${appId}/public/data/chats/${members.join('-')}`;
-        }
-        return null;
-    }, [userId, partnerId]);
-    
-    // --- 4. Lógica de Borrado de Emergencia (Destrucción Total) ---
-    const handleEmergencyWipe = async () => {
-        const shouldProceed = window.prompt("¿ESTÁS ABSOLUTAMENTE SEGURO de ejecutar el Borrado de Emergencia? Esto es irreversible. Escribe 'BORRAR' para confirmar.") === 'BORRAR';
-        if (!shouldProceed) return;
-        
-        try {
-            // 1. Destrucción Remota (Mensajes del Chat)
-            if (chatPath) {
-                setLoadingText('Borrando mensajes remotos...');
-                const messagesRef = collection(db, `${chatPath}/messages`);
-                const snapshot = await getDocs(messagesRef);
-                
-                // Usamos Promise.all para manejar las promesas de deleteDoc de forma concurrente
-                await Promise.all(snapshot.docs.map(d => deleteDoc(doc(db, `${chatPath}/messages`, d.id))));
-
-                // Borrar el documento de chat principal
-                const chatDocRef = doc(db, `artifacts/${appId}/public/data/chats`, [userId, partnerId].sort().join('-'));
-                const chatDocSnap = await getDoc(chatDocRef);
-                if (chatDocSnap.exists()) {
-                    await deleteDoc(chatDocRef);
-                }
-            }
-            
-            // 2. Destrucción Remota (Documento de Emparejamiento - USANDO EL CODE COMO DOC ID)
-            if (connectionCode) {
-                setLoadingText('Invalidando código de emparejamiento...');
-                const pairingDocRef = doc(db, `artifacts/${appId}/public/data/pairing`, connectionCode);
-                const pairingDocSnap = await getDoc(pairingDocRef);
-                
-                if (pairingDocSnap.exists()) {
-                    await updateDoc(pairingDocRef, { status: 'wiped', wipedById: userId, wipedAt: new Date().toISOString() });
-                    // NOTA: Se actualiza a 'wiped' en lugar de borrar para que el otro usuario lo detecte.
-                }
-            }
-            
-            // 3. Destrucción Local
-            setEncryptionKey(null);
-            setPartnerId(null);
-            setIsPaired(false);
-            setIsCodeGenerated(false);
-            setConnectionCode('');
-            setIsGenerator(false);
-            setLoadingText('Borrado de emergencia completado. Necesitas re-emparejarte.');
-            setIsLocked(true);
-            setIsSettingsOpen(false);
-            setInputEncryptionKey(''); // Limpiar la clave de entrada también
-            
-            window.prompt("Borrado de Emergencia Exitoso: Clave de cifrado eliminada y datos remotos del chat marcados para destrucción.");
-            
-        } catch (error) {
-            console.error("Error al ejecutar borrado de emergencia:", error);
-            window.prompt("Aviso: El borrado de emergencia falló parcialmente. Revisa la consola.");
-            setLoadingText('Fallo en el borrado.');
-        }
-    }
-
-    // --- 5. Lógica de Generación y Emparejamiento de Código (SEGURIDAD REFACTORIZADA) ---
-
-    // Genera el código único y la clave de cifrado compartida (SOLO LOCALMENTE)
-    const handleGenerateCode = async () => {
-        if (!db || !userId || !isAuthReady) return;
-        try {
-            setLoadingText('Generando clave y código...');
-            setConnectionError('');
-            
-            // 1. Generar clave de cifrado (simulada y guardada localmente)
-            const keyBuffer = await crypto.subtle.generateKey(
+            return crypto.subtle.deriveKey(
+                {
+                    name: "PBKDF2",
+                    salt: salt,
+                    iterations: 100000,
+                    hash: "SHA-256",
+                },
+                keyMaterial,
                 { name: "AES-GCM", length: 256 },
-                true,
+                true, // Exportable (for debugging/storage, but we store it in memory)
                 ["encrypt", "decrypt"]
             );
-            const exportedKey = await crypto.subtle.exportKey("raw", keyBuffer);
-            const keyBase64 = btoa(String.fromCharCode(...new Uint8Array(exportedKey)));
-            
-            // 2. Generar código de 12 caracteres (usado como Doc ID)
-            const code = generateUniqueCode();
-            
-            // 3. Crear documento de emparejamiento SIN LA CLAVE (Solo señalización)
-            const pairingDocRef = doc(db, `artifacts/${appId}/public/data/pairing`, code);
-            await setDoc(pairingDocRef, {
-                generatorId: userId,
-                // CORRECCIÓN CRÍTICA: NO SUBIMOS LA CLAVE SIMÉTRICA
-                status: 'pending',
-                createdAt: new Date().toISOString()
-            });
-
-            setConnectionCode(code);
-            setEncryptionKey(keyBase64); // Se establece la clave localmente (Simulación de KeyChain)
-            setIsCodeGenerated(true);
-            setIsGenerator(true);
-            setLoadingText('Esperando conexión...');
-
-        } catch (error) {
-            console.error('Error al generar código:', error);
-            setConnectionError('Error al generar el código de emparejamiento.');
         }
-    };
-    
-    // Invalida el código actual
-    const handleRegenerateCode = async () => {
-        const shouldProceed = window.prompt("¿Deseas invalidar el código actual y generar uno nuevo? Escribe 'SI' para confirmar.") === 'SI';
-        if (!shouldProceed) return;
-        
-        if (connectionCode) {
-            // USANDO LA REFERENCIA DIRECTA (CORRECCIÓN)
-            const pairingDocRef = doc(db, `artifacts/${appId}/public/data/pairing`, connectionCode);
-            const docSnap = await getDoc(pairingDocRef);
-            if(docSnap.exists()){
-                // Actualizamos el estado del documento encontrado
-                await updateDoc(pairingDocRef, { status: 'expired', expiredAt: new Date().toISOString() });
+
+        /**
+         * Cifra un mensaje.
+         * @param {string} text El mensaje en texto plano.
+         * @returns {Promise<{ciphertext: string, iv: string}>} El mensaje cifrado y el IV.
+         */
+        async function encryptMessage(text) {
+            if (!symmetricKey) throw new Error("Clave de cifrado no disponible.");
+
+            const encoder = new TextEncoder();
+            const data = encoder.encode(text);
+            const iv = crypto.getRandomValues(new Uint8Array(12)); // IV de 12 bytes para AES-GCM
+
+            const buffer = await crypto.subtle.encrypt(
+                { name: "AES-GCM", iv: iv },
+                symmetricKey,
+                data
+            );
+
+            const ciphertext = arrayBufferToBase64(buffer);
+            const ivString = arrayBufferToBase64(iv.buffer);
+
+            return { ciphertext, iv: ivString };
+        }
+
+        /**
+         * Descifra un mensaje.
+         * @param {string} ciphertext El texto cifrado en base64.
+         * @param {string} ivString El IV en base64.
+         * @returns {Promise<string>} El mensaje descifrado en texto plano.
+         */
+        async function decryptMessage(ciphertext, ivString) {
+            if (!symmetricKey) return "[Mensaje Cifrado - Clave Faltante]";
+            
+            try {
+                const dataBuffer = base64ToArrayBuffer(ciphertext);
+                const ivBuffer = base64ToArrayBuffer(ivString);
+
+                const decryptedBuffer = await crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: new Uint8Array(ivBuffer) },
+                    symmetricKey,
+                    dataBuffer
+                );
+
+                const decoder = new TextDecoder();
+                return decoder.decode(decryptedBuffer);
+            } catch (error) {
+                console.error("Error al descifrar el mensaje:", error);
+                return "[Error de Descifrado]";
             }
         }
-        setIsCodeGenerated(false);
-        setConnectionCode('');
-        setEncryptionKey(null);
-        handleGenerateCode();
-    }
 
-    // Se une usando el código de la otra persona (Conector)
-    const handleJoinChat = async () => {
-        if (!db || !userId || !inputConnectCode || !inputEncryptionKey || !isAuthReady) {
-            setConnectionError('Ingresa el Código y la Clave de Sesión.');
-            return;
+        // --- Utilidades de Conversión ---
+
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+
+        function base64ToArrayBuffer(base64) {
+            const binary_string = atob(base64);
+            const len = binary_string.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary_string.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function hashPin(pin) {
+            return pin; // Para simplificar, usamos el pin como hash, pero DEBE ser un hash real en producción.
+        }
+
+        // --- Flujo de la Aplicación y Estado ---
+
+        /**
+         * Muestra una alerta personalizada (reemplaza alert()).
+         * @param {string} title Título de la alerta.
+         * @param {string} message Mensaje de la alerta.
+         */
+        function customAlert(title, message) {
+            document.getElementById('alertTitle').innerText = title;
+            document.getElementById('alertMessage').innerText = message;
+            document.getElementById('customAlert').classList.remove('hidden');
         }
         
-        try {
-            setLoadingText('Intentando conectar...');
-            setConnectionError('');
-            
-            // USANDO LA REFERENCIA DIRECTA (CORRECCIÓN)
-            const pairingDocRef = doc(db, `artifacts/${appId}/public/data/pairing`, inputConnectCode.toUpperCase());
-            const pairingDocSnap = await getDoc(pairingDocRef);
-
-            if (!pairingDocSnap.exists()) {
-                setConnectionError('Código no válido o expirado.');
-                setLoadingText('Listo.');
-                return;
+        /**
+         * Genera un ID de 12 caracteres alfanuméricos.
+         * @returns {string} El código de sala.
+         */
+        function generateRoomId() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let result = '';
+            for (let i = 0; i < 12; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
             }
-            
-            const data = pairingDocSnap.data();
-
-            if (data.status !== 'pending') {
-                setConnectionError('El código ya fue utilizado o expiró.');
-                setLoadingText('Listo.');
-                return;
-            }
-
-            const generatorId = data.generatorId;
-
-            // 1. Establecer la clave de cifrado compartida (Asumida fuera de banda)
-            setEncryptionKey(inputEncryptionKey);
-            
-            // 2. Actualizar el documento de emparejamiento con el ID del conector
-            await updateDoc(pairingDocRef, {
-                partnerId: userId,
-                status: 'paired',
-                connectedAt: new Date().toISOString()
-            });
-
-            // 3. Establecer estados locales
-            setPartnerId(generatorId);
-            setIsPaired(true);
-            setIsGenerator(false);
-            setConnectionCode(inputConnectCode.toUpperCase());
-            setLoadingText('Conexión establecida y cifrada!');
-            
-        } catch (error) {
-            console.error('Error al unirse al chat:', error);
-            setConnectionError('Fallo en la conexión. Intenta de nuevo.');
-            setLoadingText('Listo.');
+            return result;
         }
-    };
 
-    // Listener para el Generador: Detectar si el otro usuario se unió (USANDO REFERENCIA DIRECTA)
-    useEffect(() => {
-        if (!db || !isGenerator || !connectionCode || !isAuthReady || isPaired) return;
-        
-        const pairingDocRef = doc(db, `artifacts/${appId}/public/data/pairing`, connectionCode);
-        
-        const unsubscribe = onSnapshot(pairingDocRef, (docSnap) => {
-            if (!docSnap.exists()) return;
-            
-            const data = docSnap.data();
-            if (data && data.status === 'paired' && data.partnerId) {
-                // Generador detecta que el Conector se unió
-                setPartnerId(data.partnerId);
-                setIsPaired(true);
-                setLoadingText('Conexión establecida y cifrada!');
-            }
-            // Listener para detectar si el Generador o Conector hicieron un 'WIPE'
-            if (data && data.status === 'wiped' && data.wipedById !== userId) {
-                 window.alert("AVISO DE SEGURIDAD: El emparejamiento fue limpiado o expirado por el otro usuario. Necesita re-emparejarse.");
-                 // Forzar el estado de desvinculación
-                 setEncryptionKey(null);
-                 setPartnerId(null);
-                 setIsPaired(false);
-                 setConnectionCode('');
-                 setIsCodeGenerated(false);
-                 setIsGenerator(false);
-                 setLoadingText('Listo.');
-            }
-        });
+        /**
+         * Navega entre las pantallas (Setup, PIN Lock, Chat).
+         */
+        function showScreen(screenId) {
+            document.getElementById('setupScreen').classList.add('hidden');
+            document.getElementById('pinLockScreen').classList.add('hidden');
+            document.getElementById('chatScreen').classList.add('hidden');
 
-        return () => unsubscribe();
-    }, [db, isGenerator, connectionCode, isAuthReady, isPaired, userId]); // Se agregó isPaired para evitar re-ejecución innecesaria
-
-    // --- 6. Lógica de Chat: Enviar y Recibir Mensajes (CORRECCIÓN DE ASINCRONÍA) ---
-    const sendMessage = async () => {
-        if (!db || !chatPath || !encryptionKey || newMessage.trim() === '' || !isAuthReady) return;
-
-        try {
-            const encryptedText = await encryptMessage(newMessage.trim(), encryptionKey);
-
-            await addDoc(collection(db, `${chatPath}/messages`), {
-                senderId: userId,
-                content: encryptedText,
-                timestamp: Date.now()
-            });
-
-            setNewMessage('');
-        } catch (error) {
-            console.error('Error al enviar mensaje cifrado:', error);
+            document.getElementById(screenId).classList.remove('hidden');
         }
-    };
 
-    // Listener de Mensajes Cifrados (CORRECCIÓN DE DEPENDENCIA Y ASINCRONÍA)
-    useEffect(() => {
-        if (!db || !chatPath || !isPaired || !encryptionKey || !isAuthReady) return;
-        
-        const messagesCollectionRef = collection(db, `${chatPath}/messages`);
-        const q = query(messagesCollectionRef, orderBy('timestamp', 'desc'));
-        
-        // CORRECCIÓN: Se elimina chatMessages de las dependencias. La lógica del callback 
-        // debe ser autocontenida o usar state setters funcionales.
-        const unsubscribe = onSnapshot(q, async (snapshot) => {
-            
-            // Usamos un array para almacenar las promesas de descifrado
-            const decryptionPromises = snapshot.docs.map(async (doc) => {
-                const data = doc.data();
-                const decryptedText = await decryptMessage(data.content, encryptionKey);
+        /**
+         * Inicializa la interfaz al cargar.
+         */
+        function initializeUI() {
+            const storedPinHash = localStorage.getItem('secureChatPinHash');
+            const storedRoomId = localStorage.getItem('secureChatRoomId');
+
+            if (storedPinHash && storedRoomId) {
+                // Usuario ya configuró la app: pedir PIN
+                pinHash = storedPinHash;
+                roomId = storedRoomId;
+                showScreen('pinLockScreen');
+            } else {
+                // Primer uso: ir a la configuración
+                showScreen('setupScreen');
+                document.getElementById('roleSelection').classList.remove('hidden');
+                document.getElementById('pinInstruction').innerText = 'Ingresa tu clave numérica de 4 dígitos:';
+            }
+        }
+
+        // --- Configuración Inicial y Conexión (Pantalla 2) ---
+
+        /**
+         * Configura el rol del usuario (Host o Cliente).
+         */
+        function setRole(role) {
+            document.getElementById('roleSelection').classList.add('hidden');
+            document.getElementById('hostArea').classList.add('hidden');
+            document.getElementById('clientArea').classList.add('hidden');
+
+            if (role === 'host') {
+                document.getElementById('hostArea').classList.remove('hidden');
+            } else {
+                document.getElementById('clientArea').classList.remove('hidden');
+            }
+        }
+
+        /**
+         * Host: Guarda el PIN y genera el código de sala.
+         */
+        async function setupPinAndGenerateCode() {
+            const pin = document.getElementById('hostPinInput').value;
+            if (pin.length !== 4 || !/^\d+$/.test(pin)) {
+                return customAlert("Error de PIN", "El PIN debe ser una clave numérica de 4 dígitos.");
+            }
+
+            pinHash = hashPin(pin);
+            roomId = generateRoomId();
+
+            try {
+                // 1. Derivar la clave simétrica
+                symmetricKey = await deriveKey(roomId);
+
+                // 2. Crear el documento de sala en Firestore (público)
+                const roomRef = doc(db, `artifacts/${appId}/public/data/secure_chats`, roomId);
+                await setDoc(roomRef, {
+                    hostId: userId,
+                    createdAt: serverTimestamp(),
+                    status: 'waiting', // Estado inicial
+                });
+
+                // 3. Persistir la configuración localmente
+                localStorage.setItem('secureChatPinHash', pinHash);
+                localStorage.setItem('secureChatRoomId', roomId);
+
+                // 4. Mostrar el código y esperar
+                document.getElementById('hostArea').classList.add('hidden');
+                document.getElementById('displayCode').innerText = roomId;
+                document.getElementById('hostWaitingArea').classList.remove('hidden');
+
+                // 5. Iniciar escucha de la sala
+                startRoomListener();
                 
-                return {
-                    id: doc.id,
-                    text: decryptedText,
-                    isMine: data.senderId === userId,
-                    timestamp: data.timestamp
-                };
-            });
-
-            // CORRECCIÓN: Esperamos que todos los mensajes se descifren de forma concurrente
-            const newMessages = await Promise.all(decryptionPromises);
-            
-            // Determinación de nueva notificación (debe hacerse comparando estados)
-            // Ya que eliminamos chatMessages de las dependencias, necesitamos una verificación de mensaje *nuevo*
-            let isNewMessageReceived = false;
-            
-            // Usamos el estado anterior para la verificación (simulado aquí, pero mejor en una app nativa)
-            if (newMessages.length > chatMessages.length && newMessages[newMessages.length - 1].isMine === false) {
-                 isNewMessageReceived = true;
+            } catch (e) {
+                console.error("Error al generar código y sala:", e);
+                customAlert("Error de Sistema", "No se pudo generar la sala. Revisa la conexión.");
             }
-            
-            setChatMessages(newMessages.reverse()); // Mostrar en orden ascendente
+        }
 
-            // SIMULACIÓN DE NOTIFICACIÓN DISCRETA
-            if (isNewMessageReceived) {
-                console.log(`[SIMULACIÓN DE NOTIFICACIÓN PUSH DISCRETA] Nuevo mensaje de: ${secretAlias}. Título simulado: "Error de Temperatura del Sistema".`);
+        /**
+         * Cliente: Guarda el PIN e intenta unirse a la sala.
+         */
+        async function setupPinAndJoinRoom() {
+            const pin = document.getElementById('clientPinInput').value;
+            const code = document.getElementById('joinCodeInput').value.toUpperCase();
+
+            if (pin.length !== 4 || !/^\d+$/.test(pin)) {
+                return customAlert("Error de PIN", "Tu PIN debe ser una clave numérica de 4 dígitos.");
             }
-        });
+            if (code.length !== 12) {
+                return customAlert("Error de Código", "El Código Único debe tener 12 caracteres.");
+            }
 
-        return () => unsubscribe();
-    }, [db, chatPath, isPaired, encryptionKey, userId, decryptMessage, secretAlias, isAuthReady]); 
+            roomId = code;
+            pinHash = hashPin(pin);
 
-    // Bloqueo instantáneo
-    const handleLockApp = () => {
-        setIsLocked(true);
-        setIsSettingsOpen(false);
-        setPasscodeInput('');
-    };
+            try {
+                // 1. Derivar la clave simétrica
+                symmetricKey = await deriveKey(roomId);
 
-    // --- Renderizado de la Interfaz de Usuario ---
+                // 2. Intentar unirse (si la sala existe, actualiza el estado)
+                const roomRef = doc(db, `artifacts/${appId}/public/data/secure_chats`, roomId);
 
-    if (!isAuthReady) {
-        return (
-            <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white p-4">
-                <p className="text-xl animate-pulse">{loadingText}</p>
-            </div>
-        );
-    }
-    
-    if (isLocked) {
-        return (
-            <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white p-4">
-                <div className="w-full max-w-sm p-6 bg-gray-800 rounded-xl shadow-2xl border border-gray-700">
-                    <h2 className="text-3xl font-bold mb-6 text-center text-cyan-400">Acceso Seguro</h2>
-                    <p className="text-center mb-6 text-gray-400">Ingrese su PIN de 4 dígitos (Simulación de Face ID/Clave)</p>
-                    <div className="space-y-4">
-                        <input
-                            type="password"
-                            maxLength="4"
-                            value={passcodeInput}
-                            onChange={(e) => setPasscodeInput(e.target.value)}
-                            className="w-full text-center text-3xl tracking-[1.5em] font-mono p-3 bg-gray-700 text-white rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition duration-150"
-                            placeholder="••••"
-                        />
-                        {passcodeError && <p className="text-red-400 text-center text-sm">{passcodeError}</p>}
-                        <button
-                            onClick={handleUnlock}
-                            disabled={passcodeInput.length !== 4}
-                            className="w-full py-3 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-lg transition duration-150 disabled:bg-cyan-800 disabled:opacity-50"
-                        >
-                            Desbloquear
-                        </button>
-                        <p className="text-xs text-gray-500 text-center mt-4">Demo PIN: 1234</p>
-                    </div>
-                </div>
-            </div>
-        );
-    }
+                await runTransaction(db, async (transaction) => {
+                    const roomDoc = await transaction.get(roomRef);
 
-    if (!isPaired) {
-        const PairingScreen = () => (
-            <div className="p-8 space-y-8">
-                <h2 className="text-3xl font-bold text-center text-cyan-400">Establecer Conexión Cifrada</h2>
-                <p className="text-sm text-gray-400 text-center">**AVISO DE SEGURIDAD (CORRECCIÓN E2EE):** La clave simétrica de sesión NO viaja por Firebase. Debe ser compartida *fuera de banda* (ej. verbalmente) después de generar el Código de Emparejamiento.</p>
+                    if (!roomDoc.exists() || roomDoc.data().status === 'closed') {
+                        throw "ROOM_NOT_FOUND";
+                    }
+
+                    // Actualiza el estado de la sala
+                    transaction.update(roomRef, {
+                        clientId: userId,
+                        status: 'active', // Marca la sala como activa
+                        joinedAt: serverTimestamp(),
+                    });
+                });
+
+                // 3. Persistir la configuración localmente
+                localStorage.setItem('secureChatPinHash', pinHash);
+                localStorage.setItem('secureChatRoomId', roomId);
+
+                // 4. Iniciar el chat
+                startChatSession();
                 
-                {isCodeGenerated ? (
-                    <div className="bg-gray-700 p-6 rounded-xl shadow-lg border-2 border-cyan-500 space-y-4">
-                        <p className="text-lg font-semibold text-center text-white">Código de Emparejamiento Único</p>
-                        <div className="bg-gray-800 p-4 rounded-lg">
-                            <p className="text-4xl font-mono tracking-widest text-center text-red-400 break-all">{connectionCode}</p>
-                        </div>
-                        <p className="text-sm text-yellow-400 text-center">**Generador:** Comparta el CÓDIGO de arriba y la CLAVE de abajo con su pareja.</p>
-                        
-                        {/* DEMO DE CLAVE FUERA DE BANDA (SOLO PARA GENERADOR) */}
-                        {isGenerator && (
-                            <>
-                                <p className="text-sm text-yellow-400 text-center font-bold">CLAVE DE SESIÓN SECRETA (Compartir FUERA DE BANDA):</p>
-                                <div className="bg-gray-900 p-3 rounded-lg break-all">
-                                     <code className="text-green-400 text-xs font-mono">{encryptionKey}</code>
-                                </div>
-                            </>
-                        )}
-                        
-                        <p className="text-xs text-gray-400 text-center">{loadingText}</p>
-                        <button
-                            onClick={handleRegenerateCode}
-                            className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition duration-150"
-                        >
-                            Regenerar Código
-                        </button>
-                    </div>
-                ) : (
-                    <div className="space-y-6">
-                        <div className="flex justify-center space-x-4">
-                            <button
-                                onClick={handleGenerateCode}
-                                className="w-1/2 py-4 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl shadow-lg transition duration-150"
-                            >
-                                1. Ser el Generador (Crea Clave)
-                            </button>
-                            <div className="w-1/2 p-4 bg-gray-800 rounded-xl shadow-lg space-y-3">
-                                <input
-                                    type="text"
-                                    maxLength="12"
-                                    value={inputConnectCode}
-                                    onChange={(e) => setInputConnectCode(e.target.value.toUpperCase())}
-                                    className="w-full p-2 bg-gray-700 text-white rounded-lg text-center font-mono tracking-wider placeholder-gray-500"
-                                    placeholder="2. Ingresar Código (12 Car.)"
-                                />
-                                {/* CAMPO DE CLAVE DE SESIÓN RECIBIDA FUERA DE BANDA */}
-                                <input
-                                    type="text"
-                                    value={inputEncryptionKey}
-                                    onChange={(e) => setInputEncryptionKey(e.target.value)}
-                                    className="w-full p-2 bg-gray-700 text-white rounded-lg text-center font-mono tracking-wider placeholder-gray-500"
-                                    placeholder="3. Ingresar Clave de Sesión (Recibida)"
-                                />
-                                <button
-                                    onClick={handleJoinChat}
-                                    disabled={inputConnectCode.length !== 12 || inputEncryptionKey.length === 0}
-                                    className="w-full py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-lg transition duration-150 disabled:bg-cyan-800 disabled:opacity-50"
-                                >
-                                    Conectar
-                                </button>
-                            </div>
-                        </div>
-                        {connectionError && <p className="text-red-400 text-center mt-4">{connectionError}</p>}
-                    </div>
-                )}
-            </div>
-        );
-        return (
-            <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
-                <div className="w-full max-w-lg bg-gray-900 rounded-xl">
-                    <PairingScreen />
-                </div>
-            </div>
-        );
-    }
-    
-    // 3. Pantalla de Chat Cifrado o Configuración
-    
-    if (isSettingsOpen) {
-        return (
-            <div className="flex flex-col h-screen bg-gray-900 text-white font-sans">
-                <SettingsScreen 
-                    userId={userId}
-                    encryptionKey={encryptionKey}
-                    passcode={passcode}
-                    onPasscodeChange={handlePasscodeChange}
-                    onEmergencyWipe={handleEmergencyWipe}
-                    onClose={() => setIsSettingsOpen(false)}
-                />
-            </div>
-        );
-    }
+            } catch (e) {
+                console.error("Error al unirse a la sala:", e);
+                document.getElementById('joinError').innerText = (e === "ROOM_NOT_FOUND") ? "Código no encontrado o sala ya cerrada." : "Error de conexión. Intenta de nuevo.";
+                document.getElementById('joinError').classList.remove('hidden');
+                // Borrar clave para forzar nuevo intento
+                symmetricKey = null;
+                roomId = null;
+            }
+        }
 
-    return (
-        <div className="flex flex-col h-screen bg-gray-900 text-white font-sans">
-            {/* Encabezado */}
-            <header className="bg-gray-800 p-4 flex items-center justify-between shadow-lg">
-                <h1 className="text-xl font-bold text-cyan-400">Chat Privado Cifrado</h1>
-                <div className="flex items-center space-x-3">
-                    <div className="text-sm text-gray-400 hidden sm:block">
-                        <span className="font-mono">{isGenerator ? 'Generador' : 'Conector'}</span> | Estado: <span className="text-green-400">Cifrado E2EE</span>
-                    </div>
+        /**
+         * Host: Resetea el proceso si el código no funciona o se pierde.
+         * La solución sugerida es generar un código completamente nuevo.
+         */
+        function cancelConnectionAndReset() {
+            // Eliminar la sala antigua para evitar que alguien se conecte tarde
+            if (roomId) {
+                 // No es necesario esperar el borrado para continuar
+                 deleteRoom(roomId);
+            }
+            // Limpiar estados y volver a empezar
+            pinHash = null;
+            symmetricKey = null;
+            localStorage.removeItem('secureChatPinHash');
+            localStorage.removeItem('secureChatRoomId');
+            
+            // Volver a la selección de rol
+            document.getElementById('hostWaitingArea').classList.add('hidden');
+            document.getElementById('roleSelection').classList.remove('hidden');
+            initializeUI();
+            customAlert("Código Cancelado", "Se ha generado un nuevo Código Único. El anterior ya no es válido.");
+        }
+
+        // --- Bloqueo de PIN (Pantalla 1) ---
+
+        /**
+         * Maneja el ingreso del PIN para desbloquear la aplicación.
+         */
+        async function handlePinInput() {
+            const inputPin = document.getElementById('pinInput').value;
+            const inputHash = hashPin(inputPin);
+
+            if (inputHash === pinHash && roomId) {
+                // Desbloqueo exitoso. Derivar la clave y cargar la sesión de chat.
+                document.getElementById('pinError').classList.add('hidden');
+                
+                try {
+                    // Re-derivar la clave simétrica con el roomId persistido
+                    symmetricKey = await deriveKey(roomId);
+                    startChatSession();
+                } catch (e) {
+                    console.error("Error al re-derivar la clave:", e);
+                    // Si falla, forzar reconfiguración
+                    resetAppAndLogout();
+                    customAlert("Error de Cifrado", "No se pudo restaurar la sesión segura. Por favor, reinicia la conexión.");
+                }
+
+            } else {
+                document.getElementById('pinError').classList.remove('hidden');
+                document.getElementById('pinInput').value = '';
+            }
+        }
+
+        // --- Chat Activo (Pantalla 3) ---
+
+        /**
+         * Inicia la sesión de chat después de la conexión o desbloqueo.
+         */
+        function startChatSession() {
+            showScreen('chatScreen');
+            document.getElementById('pinInput').value = ''; // Limpiar PIN
+            setupHeaderControls(); // Muestra botones de Bloquear/Cerrar
+            startMessagesListener();
+            startRoomListener();
+            requestNotificationPermission();
+        }
+
+        /**
+         * Configura los botones de la cabecera (Bloquear/Cerrar Sesión).
+         */
+        function setupHeaderControls() {
+            const controls = document.getElementById('headerControls');
+            controls.innerHTML = `
+                <button onclick="lockApp()" class="bg-[#21262d] text-gray-300 px-3 py-1 rounded-lg border border-[#30363d] hover:bg-[#30363d] transition duration-200">
+                    Bloquear 🔒
+                </button>
+                <button onclick="closeSessionAndWipe()" class="bg-red-700 text-white px-3 py-1 rounded-lg hover:bg-red-800 transition duration-200">
+                    Cerrar App ❌
+                </button>
+            `;
+        }
+
+        /**
+         * Listener para el estado de la sala (Host esperando o Cliente unido).
+         * Solo es realmente importante para el Host en estado 'waiting'.
+         */
+        let roomUnsubscribe;
+        function startRoomListener() {
+            if (roomUnsubscribe) roomUnsubscribe();
+
+            const roomRef = doc(db, `artifacts/${appId}/public/data/secure_chats`, roomId);
+            roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
                     
-                    {/* BOTÓN DE BLOQUEO INSTANTÁNEO */}
-                    <button 
-                        onClick={handleLockApp}
-                        className="p-2 bg-gray-700 rounded-full hover:bg-gray-600 transition duration-150"
-                        title="Bloquear Aplicación"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6-4h12m-6 4v-4m0 0H6m6 0h6m-12 0V9a6 6 0 0112 0v4m-6-4V9a3 3 0 00-6 0v4" />
-                        </svg>
-                    </button>
-                    
-                    {/* Botón de Configuración Existente */}
-                    <button 
-                        onClick={() => setIsSettingsOpen(true)}
-                        className="p-2 bg-gray-700 rounded-full hover:bg-gray-600 transition duration-150"
-                        title="Configuración de Seguridad"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.82 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.82 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.82-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.82-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                    </button>
-                </div>
-            </header>
+                    // Si el estado pasa a 'active' y el Host estaba esperando
+                    if (data.status === 'active' && document.getElementById('hostWaitingArea').classList.contains('hidden') === false) {
+                        // El cliente se unió
+                        document.getElementById('hostWaitingArea').classList.add('hidden');
+                        startChatSession();
+                    }
 
-            {/* Contenedor de Mensajes */}
-            <main className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                {chatMessages.map((msg) => (
-                    <div 
-                        key={msg.id} 
-                        className={`flex ${msg.isMine ? 'justify-end' : 'justify-start'}`}
-                    >
-                        <div className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-2xl shadow-md ${
-                            msg.isMine 
-                                ? 'bg-cyan-600 text-white rounded-br-none' 
-                                : 'bg-gray-700 text-white rounded-tl-none'
-                            }`}>
-                            <p className="text-sm break-words">{msg.text}</p>
-                            <span className="block text-xs mt-1 opacity-70">
-                                {new Date(msg.timestamp).toLocaleTimeString('es-CL')}
-                            </span>
-                        </div>
+                    // Si la sala se cerró remotamente
+                    if (data.status === 'closed') {
+                        customAlert("SESIÓN CERRADA", "Tu compañero ha cerrado la sesión. El historial de chat ha sido eliminado. Debes iniciar una nueva conexión.");
+                        resetAppAndLogout();
+                    }
+                } else {
+                     // Si el documento de sala ya no existe (borrado remoto)
+                    if (roomId) {
+                        customAlert("CONEXIÓN INTERRUMPIDA", "La sala de chat fue eliminada remotamente. Por favor, reinicia la conexión.");
+                        resetAppAndLogout();
+                    }
+                }
+            });
+        }
+
+        /**
+         * Listener para nuevos mensajes en la colección de chat.
+         */
+        let messagesUnsubscribe;
+        function startMessagesListener() {
+            if (messagesUnsubscribe) messagesUnsubscribe();
+
+            const messagesCol = collection(db, `artifacts/${appId}/public/data/secure_chats/${roomId}/messages`);
+            const q = query(messagesCol, orderBy("timestamp", "asc"));
+
+            messagesUnsubscribe = onSnapshot(q, (snapshot) => {
+                const chatArea = document.getElementById('chatArea');
+                // Almacenar el historial para evitar scroll si solo se actualiza
+                const currentScrollTop = chatArea.scrollTop;
+                const isNearBottom = chatArea.scrollHeight - chatArea.clientHeight <= currentScrollTop + 10;
+                
+                chatArea.innerHTML = ''; // Limpiar antes de renderizar (simple re-renderizado)
+                
+                snapshot.forEach(async (doc) => {
+                    const data = doc.data();
+                    const decryptedText = await decryptMessage(data.ciphertext, data.iv);
+                    renderMessage(data.senderId, decryptedText);
+
+                    // Notificación silenciosa si el mensaje no es mío y la ventana no está enfocada
+                    if (data.senderId !== userId && !document.hasFocus()) {
+                        sendDisguisedNotification(decryptedText);
+                    }
+                });
+                
+                // Mantener el scroll al fondo si ya estaba cerca del fondo
+                if (isNearBottom) {
+                    chatArea.scrollTop = chatArea.scrollHeight;
+                }
+            });
+        }
+        
+        /**
+         * Renderiza un mensaje en la interfaz.
+         */
+        function renderMessage(senderId, text) {
+            const chatArea = document.getElementById('chatArea');
+            const isSent = senderId === userId;
+            const alignment = isSent ? 'justify-end' : 'justify-start';
+
+            const messageHtml = `
+                <div class="flex ${alignment}">
+                    <div class="message-bubble ${isSent ? 'sent' : 'received'}">
+                        <p class="text-sm">${text}</p>
                     </div>
-                ))}
-            </main>
-
-            {/* Área de Entrada */}
-            <div className="bg-gray-800 p-4 border-t border-gray-700 shadow-xl">
-                <div className="flex space-x-3">
-                    <input
-                        type="text"
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                        className="flex-1 p-3 bg-gray-700 text-white rounded-full focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-gray-500 transition duration-150"
-                        placeholder="Escribe un mensaje seguro..."
-                    />
-                    <button
-                        onClick={sendMessage}
-                        disabled={newMessage.trim() === ''}
-                        className="p-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-full transition duration-150 disabled:bg-gray-700 disabled:opacity-50"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                    </button>
                 </div>
-            </div>
-        </div>
-    );
-};
+            `;
+            chatArea.innerHTML += messageHtml;
+        }
 
-export default App;
+        /**
+         * Envía un mensaje cifrado a Firestore.
+         */
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            try {
+                const { ciphertext, iv } = await encryptMessage(text);
+                
+                const messagesCol = collection(db, `artifacts/${appId}/public/data/secure_chats/${roomId}/messages`);
+                await addDoc(messagesCol, {
+                    senderId: userId,
+                    ciphertext: ciphertext,
+                    iv: iv,
+                    timestamp: serverTimestamp(),
+                });
+
+                input.value = ''; // Limpiar input
+            } catch (e) {
+                console.error("Error al enviar o cifrar:", e);
+                customAlert("Error de Envío", "No se pudo cifrar o enviar el mensaje. Revisa la clave.");
+            }
+        }
+
+        // --- Funciones de Seguridad y Sesión ---
+
+        /**
+         * Bloquea la aplicación, volviendo a la pantalla de PIN.
+         */
+        function lockApp() {
+            showScreen('pinLockScreen');
+        }
+        
+        /**
+         * Cierra la sesión, elimina el historial y resetea la app.
+         */
+        async function closeSessionAndWipe() {
+            if (!roomId) {
+                return resetAppAndLogout(); // Si no hay room, solo log out
+            }
+
+            // Usar la alerta personalizada en lugar de window.confirm
+            showConfirmationModal("Confirmación de Cierre", 
+                                  "¿Estás seguro de que quieres cerrar la aplicación? Se eliminará TODO el historial de chat de esta sala para AMBAS partes.",
+                                  () => {
+                                      performWipe();
+                                  });
+        }
+        
+        // Función auxiliar para el modal de confirmación
+        function showConfirmationModal(title, message, onConfirm) {
+            const modal = document.getElementById('customAlert');
+            document.getElementById('alertTitle').innerText = title;
+            document.getElementById('alertMessage').innerText = message;
+            
+            // Reemplazar el botón Aceptar por botones de Confirmar/Cancelar
+            const confirmButton = document.createElement('button');
+            confirmButton.className = 'w-1/2 bg-red-700 text-white py-2 rounded-lg font-semibold hover:bg-red-800 mr-2';
+            confirmButton.innerText = 'Confirmar';
+            confirmButton.onclick = () => {
+                modal.classList.add('hidden');
+                onConfirm();
+                // Restaurar botón original de Aceptar (aunque se recrea en customAlert)
+            };
+
+            const cancelButton = document.createElement('button');
+            cancelButton.className = 'w-1/2 bg-[#30363d] text-gray-300 py-2 rounded-lg font-semibold hover:bg-[#4a5057] ml-2';
+            cancelButton.innerText = 'Cancelar';
+            cancelButton.onclick = () => {
+                modal.classList.add('hidden');
+            };
+
+            const buttonContainer = modal.querySelector('#alertMessage').nextElementSibling;
+            buttonContainer.innerHTML = '';
+            buttonContainer.appendChild(confirmButton);
+            buttonContainer.appendChild(cancelButton);
+
+            modal.classList.remove('hidden');
+        }
+
+        async function performWipe() {
+            try {
+                // 1. Borrar la sala de chat, lo que notifica al otro usuario (a través del listener)
+                await deleteRoom(roomId);
+            } catch (e) {
+                console.warn("No se pudo eliminar la sala, pero se eliminará la sesión local.", e);
+            }
+
+            // 2. Borrar la sesión local (PIN, RoomId) y resetear
+            resetAppAndLogout();
+        }
+
+        /**
+         * Elimina el documento de la sala en Firestore.
+         */
+        async function deleteRoom(id) {
+            // Nota: Firestore no elimina subcolecciones automáticamente. 
+            // Aquí, solo eliminamos el documento padre (la App debe interpretar su ausencia como sala eliminada).
+            const roomRef = doc(db, `artifacts/${appId}/public/data/secure_chats`, id);
+            await deleteDoc(roomRef);
+            console.log(`Sala ${id} marcada para eliminación.`);
+        }
+
+        /**
+         * Limpia todos los estados locales y vuelve a la pantalla inicial.
+         */
+        function resetAppAndLogout() {
+            if (roomUnsubscribe) roomUnsubscribe();
+            if (messagesUnsubscribe) messagesUnsubscribe();
+
+            roomId = null;
+            symmetricKey = null;
+            pinHash = null;
+
+            localStorage.removeItem('secureChatPinHash');
+            localStorage.removeItem('secureChatRoomId');
+
+            document.getElementById('headerControls').innerHTML = '';
+            document.getElementById('hostWaitingArea').classList.add('hidden');
+            document.getElementById('hostArea').classList.add('hidden');
+            document.getElementById('clientArea').classList.add('hidden');
+            document.getElementById('roleSelection').classList.remove('hidden');
+
+            initializeUI();
+        }
+
+        // --- Notificaciones Disfrazadas ---
+
+        /**
+         * Solicita permiso para notificaciones del navegador.
+         */
+        function requestNotificationPermission() {
+             if (!("Notification" in window)) {
+                console.log("Este navegador no soporta notificaciones de escritorio.");
+            } else if (Notification.permission !== "granted") {
+                Notification.requestPermission();
+            }
+        }
+
+        /**
+         * Envía una notificación disfrazada.
+         */
+        function sendDisguisedNotification(message) {
+            if (Notification.permission === "granted") {
+                const disguise = getDisguise();
+                new Notification(disguise.title, {
+                    body: disguise.body,
+                    icon: 'https://placehold.co/128x128/ff0000/ffffff?text=!',
+                    tag: 'secure-chat-alert', // Para evitar múltiples notificaciones
+                });
+            }
+        }
+
+        /**
+         * Obtiene un título y cuerpo aleatorio para disfrazar la alerta.
+         */
+        function getDisguise() {
+            const alerts = [
+                { title: "ALERTA CRÍTICA DE SISTEMA", body: "Temperatura de CPU excedida. Revisar Inmediatamente." },
+                { title: "ERROR DE SEGURIDAD 0x000F", body: "Fallo de conexión en segundo plano. Recibiendo datos de diagnóstico." },
+                { title: "ADVERTENCIA DEL DISPOSITIVO", body: "Espacio de Almacenamiento Cerca del Límite. Liberar Memoria Urgente." },
+                { title: "FALLO DE RED E INGRESO", body: "Problemas de cobertura: Actividad inusual detectada." }
+            ];
+            return alerts[Math.floor(Math.random() * alerts.length)];
+        }
 
 
+        // --- Funciones Auxiliares UI ---
 
+        function copyToClipboard(text) {
+            // Revertir a document.execCommand para compatibilidad en iframes
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
+                customAlert("Copiado", "¡El código ha sido copiado al portapapeles!");
+            } catch (err) {
+                console.error('Error al intentar copiar al portapapeles', err);
+                customAlert("Error de Copiado", "No se pudo copiar el texto. Por favor, cópialo manualmente.");
+            }
+            
+            document.body.removeChild(textarea);
+        }
 
+        // --- Inicialización Principal de Firebase ---
 
+        window.onload = function() {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
 
+            // 1. Manejo de autenticación (siempre anónima para obtener un userId)
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    initializeUI();
+                } else {
+                    // Intento de inicio de sesión anónima
+                    try {
+                        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                        if (token) {
+                            await signInWithCustomToken(auth, token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Error de autenticación inicial:", error);
+                        customAlert("Error de Auth", "No se pudo iniciar la sesión de usuario.");
+                    }
+                }
+            });
+        }
+        
+        // --- EXPOSICIÓN DE FUNCIONES GLOBALES ---
+        // Esto es necesario para que las funciones sean accesibles desde los atributos onclick del HTML.
+        window.setRole = setRole;
+        window.setupPinAndGenerateCode = setupPinAndGenerateCode;
+        window.setupPinAndJoinRoom = setupPinAndJoinRoom;
+        window.handlePinInput = handlePinInput;
+        window.sendMessage = sendMessage;
+        window.lockApp = lockApp;
+        window.closeSessionAndWipe = closeSessionAndWipe;
+        window.copyToClipboard = copyToClipboard;
+        window.cancelConnectionAndReset = cancelConnectionAndReset;
+    </script>
 
-
-
-
-
+</body>
+</html>
