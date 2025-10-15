@@ -1,4 +1,4 @@
- import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
@@ -147,24 +147,43 @@ const App = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 4. Enviar Mensaje
-  const handleSendMessage = useCallback(async (e) => {
-    e.preventDefault();
-    if (newMessage.trim() === '' || !db || !currentUser) return;
+// 4. Enviar Mensaje
+import { doc, setDoc, getDoc } from "firebase/firestore";
 
-    try {
-      const collectionPath = `/artifacts/${appId}/public/data/chat_messages`;
-      await addDoc(collection(db, collectionPath), {
-        text: newMessage,
-        userId: currentUser.uid,
-        timestamp: serverTimestamp(), // Usa serverTimestamp para ordenar
+const handleSendMessage = useCallback(async (e) => {
+  e.preventDefault();
+  if (newMessage.trim() === '' || !db || !currentUser) return;
+
+  try {
+    const appId = firebaseConfig.projectId;
+
+    // 📁 Paso 1: crear documento base si no existe
+    const baseDocRef = doc(db, `artifacts/${appId}/public/data`);
+    const baseDocSnap = await getDoc(baseDocRef);
+
+    if (!baseDocSnap.exists()) {
+      console.log("📂 Creando documento base para estructura del chat...");
+      await setDoc(baseDocRef, {
+        createdAt: serverTimestamp(),
+        createdBy: currentUser.uid,
       });
-      setNewMessage('');
-    } catch (e) {
-      console.error('Error al agregar documento: ', e);
-      setStatus(`Error al enviar: ${e.message}`);
     }
-  }, [newMessage, db, currentUser]);
+
+    // 💬 Paso 2: insertar mensaje
+    const messagesCollection = collection(db, `artifacts/${appId}/public/data/chat_messages`);
+    await addDoc(messagesCollection, {
+      text: newMessage,
+      userId: currentUser.uid,
+      timestamp: serverTimestamp(),
+    });
+
+    setNewMessage('');
+    console.log("✅ Mensaje enviado correctamente.");
+  } catch (e) {
+    console.error('❌ Error al enviar mensaje: ', e);
+    setStatus(`Error al enviar: ${e.message}`);
+  }
+}, [newMessage, db, currentUser]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col font-sans p-4">
