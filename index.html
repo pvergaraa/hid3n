@@ -215,18 +215,26 @@
 
         // CÓDIGO CORREGIDO
 // ----------------------------
-// Initialize Firebase
+// ... (Despues de firebaseConfig)
+
+// 1. Inicializar Firebase y Servicios
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app); // Inicializar Auth
-const db = getFirestore(app); // Inicializar Firestore
+const auth = getAuth(app); 
+const db = getFirestore(app); 
 
-setLogLevel('error'); // Opcional, para debug
+setLogLevel('error'); 
 
-let userId = null; // Mantenemos las variables de estado
-let roomId = null;
-let symmetricKey = null;
-let pinHash = null;
+// 2. Eliminar las re-declaraciones problemáticas (si todavía están ahí):
+// let app; // ELIMINAR ESTO
+// let db;  // ELIMINAR ESTO
+// let auth; // ELIMINAR ESTO
 
+let userId = null; 
+let roomId = null; 
+let symmetricKey = null; 
+let pinHash = null; 
+
+// ...
 // Los listener (onAuthStateChanged) deben inicializarse aquí.
 onAuthStateChanged(auth, (user) => {
     if (user) {
@@ -836,19 +844,32 @@ onAuthStateChanged(auth, (user) => {
                 auth = getAuth(app);
                 db = getFirestore(app);
 
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        console.log("Autenticado como:", userId);
-                        initializeUI();
-                    } else {
-                        userId = null;
-                        signInAnonymously(auth).catch(e => {
-                            console.error("Error al iniciar sesión anónima:", e);
-                            customAlert("Error de Auth", "No se pudo iniciar la sesión anónima de Firebase. Revisa tu conexión y las reglas de seguridad.");
-                        });
-                    }
-                });
+// 3. Flujo de Autenticación de la Aplicación
+onAuthStateChanged(auth, (user) => {
+    if (user) {
+        // Usuario conectado (anónimo o no)
+        userId = user.uid;
+        // Si hay un usuario, YA PODEMOS INICIALIZAR LA INTERFAZ
+        initializeUI();
+    } else {
+        // No hay usuario conectado, intentar iniciar sesión anónima
+        signInAnonymously(auth)
+            .then(() => {
+                // Si tiene éxito, el listener onAuthStateChanged se disparará de nuevo 
+                // con el objeto 'user' y llamará a initializeUI().
+            })
+            .catch((error) => {
+                // Si la autenticación anónima falla (p.ej., credenciales o reglas malas),
+                // mostramos el error que viste antes.
+                console.error("Error al iniciar sesión anónima:", error);
+                customAlert("Error de Auth", "No se pudo iniciar la sesión anónima de Firebase. Revisa tu conexión y las reglas de seguridad.");
+                
+                // Si la Auth falla, no mostramos la UI y queda en negro.
+                // Podrías añadir código aquí para mostrar la alerta inmediatamente:
+                // document.getElementById('appContainer').classList.remove('hidden'); 
+            });
+    }
+});
 
             } catch (e) {
                 console.error("Error FATAL de inicialización de Firebase:", e);
