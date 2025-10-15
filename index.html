@@ -1,177 +1,834 @@
-// ... CONTINUACIÓN DEL ARCHIVO HTML DENTRO DE <script type="module">
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Conexión Segura - Beta</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; /* Fondo oscuro tipo terminal */
+            color: #c9d1d9;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            max-width: 480px;
+            width: 100%;
+            height: 95vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #161b22;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .chat-area {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 16px;
+            scroll-behavior: smooth;
+        }
+        .message-bubble {
+            max-width: 80%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            word-wrap: break-word;
+        }
+        .sent {
+            background-color: #1f6feb;
+            align-self: flex-end;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+        }
+        .received {
+            background-color: #21262d;
+            align-self: flex-start;
+            margin-right: auto;
+            border: 1px solid #30363d;
+            border-bottom-left-radius: 4px;
+        }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .system-alert {
+            background-color: #ff0000;
+            color: #ffffff;
+            font-weight: bold;
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin: 10px auto;
+            text-align: center;
+            animation: pulse-red 1s infinite alternate;
+        }
+        @keyframes pulse-red {
+            from { opacity: 0.8; }
+            to { opacity: 1; }
+        }
+        .loader {
+            border-color: #58a6ff;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
 
-        /**
-         * Envía un mensaje cifrado a Firestore.
-         */
-        async function sendMessage() {
-            const input = document.getElementById('messageInput');
-            const text = input.value.trim();
-            if (!text) return;
+    <div class="container" id="appContainer">
 
-            try {
-                const { ciphertext, iv } = await encryptMessage(text);
-                
-                const messagesCol = collection(db, `artifacts/${appId}/public/data/secure_chats/${roomId}/messages`);
-                await addDoc(messagesCol, {
-                    senderId: userId,
-                    ciphertext: ciphertext,
-                    iv: iv,
-                    timestamp: serverTimestamp(),
-                });
-                input.value = ''; // Limpiar input
-            } catch (e) {
-                console.error("Error al enviar mensaje:", e);
-                customAlert("Error de Envío", "No se pudo enviar el mensaje cifrado.");
-            }
-        }
+        <header class="p-4 border-b border-gray-700 flex justify-between items-center bg-[#1a1f26]">
+            <h1 class="text-xl font-bold text-[#58a6ff]">:: RED-SECURE ::</h1>
+            <div id="headerControls" class="flex space-x-2">
+                </div>
+        </header>
 
-        // --- Control de Sesión y Limpieza ---
+        <main class="flex-grow p-4 overflow-hidden relative">
 
-        /**
-         * Borra el documento de sala (y sus subcolecciones) de Firestore.
-         */
-        async function deleteRoom(id) {
-            if (!id || !db) return;
-            try {
-                // Para borrar la subcolección 'messages' (se requiere un borrado recursivo no implementado aquí)
-                // En un entorno de producción, DEBES usar Cloud Functions para borrar la subcolección
-                // Aquí solo borramos el documento raíz y confiamos en la limpieza de reglas.
-                const roomRef = doc(db, `artifacts/${appId}/public/data/secure_chats`, id);
-                await deleteDoc(roomRef);
-                console.log(`Sala ${id} marcada como cerrada.`);
-            } catch (e) {
-                console.error(`Error al borrar sala ${id}:`, e);
-            }
-        }
+            <div id="pinLockScreen" class="absolute inset-0 bg-[#161b22] z-50 flex flex-col items-center justify-center p-4 transition-opacity duration-300 hidden">
+                <div class="p-8 bg-[#21262d] rounded-xl w-full max-w-xs shadow-lg border border-[#30363d]">
+                    <h2 class="text-2xl font-bold mb-4 text-center">🔐 Acceso Requerido</h2>
+                    <p id="pinInstruction" class="text-sm text-gray-400 mb-6 text-center">Ingresa tu clave numérica de 4 dígitos:</p>
+                    <input type="number" id="pinInput" placeholder="Clave (ej: 1234)" maxlength="4" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-2xl tracking-widest focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="if(this.value.length > this.maxLength) this.value = this.value.slice(0, this.maxLength);">
+                    <button onclick="handlePinInput()" class="w-full bg-[#58a6ff] text-white py-3 rounded-lg font-semibold hover:bg-[#4a8ce6] transition duration-200">
+                        Acceder
+                    </button>
+                    <p id="pinError" class="text-sm text-red-400 mt-3 text-center hidden">Clave incorrecta. Intenta de nuevo.</p>
+                </div>
+            </div>
 
-        /**
-         * Bloquea la aplicación y vuelve a la pantalla de PIN.
-         */
-        window.lockApp = function() {
-            showScreen('pinLockScreen');
-            document.getElementById('pinInput').value = '';
-            document.getElementById('pinError').classList.add('hidden');
-        }
+            <div id="setupScreen" class="absolute inset-0 bg-[#161b22] z-40 flex flex-col items-center justify-center p-4 transition-opacity duration-300 hidden">
+                <div class="p-8 bg-[#21262d] rounded-xl w-full max-w-sm shadow-lg border border-[#30363d]">
+                    <h2 class="text-2xl font-bold mb-6 text-center text-[#58a6ff]">Establecer Conexión Única</h2>
 
-        /**
-         * Cierra la sesión (cierra la sala remotamente y borra todo local).
-         */
-        window.closeSessionAndWipe = async function() {
-            if (messagesUnsubscribe) messagesUnsubscribe();
-            if (roomUnsubscribe) roomUnsubscribe();
+                    <div id="roleSelection">
+                        <p class="mb-4 text-center">¿Eres quien **genera** el código o quien lo **ingresa**?</p>
+                        <button onclick="setRole('host')" class="w-full bg-[#30363d] text-white py-3 rounded-lg font-semibold hover:bg-[#4a5057] transition duration-200 mb-3">
+                            Generar Código (HOST)
+                        </button>
+                        <button onclick="setRole('client')" class="w-full bg-[#30363d] text-white py-3 rounded-lg font-semibold hover:bg-[#4a5057] transition duration-200">
+                            Ingresar Código (CLIENTE)
+                        </button>
+                    </div>
 
-            if (roomId) {
-                // Señaliza el cierre a la otra parte y borra el historial
-                await deleteRoom(roomId);
-            }
+                    <div id="hostArea" class="hidden">
+                        <p class="mb-3 text-center text-sm text-gray-400">Paso 1: Define tu PIN de 4 dígitos para futuros accesos.</p>
+                        <input type="number" id="hostPinInput" placeholder="PIN de 4 dígitos" maxlength="4" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-lg focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="if(this.value.length > this.maxLength) this.value = this.value.slice(0, this.maxLength);">
+                        <button onclick="setupPinAndGenerateCode()" class="w-full bg-[#1f6feb] text-white py-3 rounded-lg font-semibold hover:bg-[#1a55b3] transition duration-200">
+                            Guardar PIN y Generar Código Único
+                        </button>
+                    </div>
 
-            resetAppAndLogout();
-            customAlert("Sesión Finalizada", "El chat ha sido cerrado y toda la información de la conexión se ha eliminado localmente.");
-        }
+                    <div id="hostWaitingArea" class="hidden text-center mt-6">
+                        <p class="text-yellow-400 mb-2 font-semibold">CÓDIGO ÚNICO GENERADO (COMPARTIR SOLO UNA VEZ):</p>
+                        <div class="p-3 bg-[#0d1117] rounded-lg border border-yellow-700 flex justify-between items-center mb-4">
+                            <code id="displayCode" class="text-xl font-mono tracking-wider text-yellow-300 select-all">...</code>
+                            <button onclick="copyToClipboard(document.getElementById('displayCode').innerText)" class="ml-3 text-gray-400 hover:text-white transition duration-150">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-2m-8-7l-4 4m0 0l4 4m-4-4h12"/></svg>
+                            </button>
+                        </div>
+                        <p class="text-sm text-gray-400 mb-4">Esperando que el Cliente ingrese este código...</p>
+                        <div class="text-center">
+                            <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-10 w-10 mb-4 inline-block"></div>
+                        </div>
+                        <button onclick="cancelConnectionAndReset()" class="w-full bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-700 transition duration-200 mt-4">
+                            Cancelar y Generar Nuevo Código
+                        </button>
+                    </div>
 
-        /**
-         * Resetea el estado de la app y el usuario de Firebase.
-         */
-        function resetAppAndLogout() {
-            localStorage.removeItem('secureChatPinHash');
-            localStorage.removeItem('secureChatRoomId');
-            roomId = null;
-            pinHash = null;
-            symmetricKey = null;
-            
-            if (auth) auth.signOut(); // Cierra la sesión anónima de Firebase
-            
-            // Limpia controles de cabecera
-            document.getElementById('headerControls').innerHTML = '';
-            // Vuelve a inicializar para forzar la pantalla de Setup
-            initializeUI();
-        }
+                    <div id="clientArea" class="hidden">
+                        <p class="mb-3 text-center text-sm text-gray-400">Paso 1: Define tu PIN de 4 dígitos para futuros accesos.</p>
+                        <input type="number" id="clientPinInput" placeholder="PIN de 4 dígitos" maxlength="4" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-lg focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="if(this.value.length > this.maxLength) this.value = this.value.slice(0, this.maxLength);">
+                        <p class="mb-3 text-center text-sm text-gray-400">Paso 2: Ingresa el Código Único de 12 caracteres proporcionado.</p>
+                        <input type="text" id="joinCodeInput" placeholder="Código Único de 12 caracteres" maxlength="12" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-lg tracking-wider uppercase focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="this.value = this.value.toUpperCase();">
+                        <button onclick="setupPinAndJoinRoom()" class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200">
+                            Conectar y Unirse al Chat
+                        </button>
+                        <p id="joinError" class="text-sm text-red-400 mt-3 text-center hidden">No se pudo encontrar el código o la sala.</p>
+                    </div>
+                </div>
+            </div>
 
-        // --- Notificaciones ---
+            <div id="chatScreen" class="h-full flex flex-col transition-opacity duration-300 hidden">
+                <div id="chatArea" class="chat-area flex flex-col">
+                    <div class="system-alert mb-4">
+                        Conexión establecida. Cifrado AES-GCM 256 activo.
+                    </div>
+                </div>
+                <div class="p-4 border-t border-gray-700 bg-[#1a1f26]">
+                    <div class="flex space-x-2">
+                        <input type="text" id="messageInput" placeholder="Escribe tu mensaje..." class="flex-grow p-3 rounded-lg bg-[#0d1117] border border-[#30363d] text-white focus:ring-[#58a6ff] focus:border-[#58a6ff]" onkeypress="if(event.key === 'Enter') sendMessage()">
+                        <button onclick="sendMessage()" class="bg-[#58a6ff] text-white px-4 py-3 rounded-lg font-semibold hover:bg-[#4a8ce6] transition duration-200 flex-shrink-0">
+                            Enviar
+                        </button>
+                    </div>
+                </div>
+            </div>
 
-        /**
-         * Solicita permiso para notificaciones.
-         */
-        function requestNotificationPermission() {
-            if (!("Notification" in window)) {
-                return;
-            }
-            if (Notification.permission !== "granted") {
-                Notification.requestPermission();
-            }
-        }
+            <div id="customAlert" class="hidden fixed inset-0 bg-black bg-opacity-75 z-[9999] flex items-center justify-center">
+                <div class="bg-[#21262d] p-6 rounded-xl shadow-2xl border border-[#30363d] w-full max-w-sm">
+                    <h3 class="text-xl font-bold text-red-400 mb-4" id="alertTitle">Alerta</h3>
+                    <p class="text-gray-300 mb-6" id="alertMessage">Mensaje de alerta.</p>
+                    <button onclick="document.getElementById('customAlert').classList.add('hidden')" class="w-full bg-[#58a6ff] text-white py-2 rounded-lg font-semibold hover:bg-[#4a8ce6]">
+                        Aceptar
+                    </button>
+                </div>
+            </div>
 
-        /**
-         * Muestra una notificación con un texto genérico.
-         */
-        function sendDisguisedNotification(text) {
-            if (Notification.permission === "granted") {
-                new Notification(":: RED-SECURE :: Nuevo Mensaje", {
-                    body: "Mensaje Recibido (Cifrado localmente).", // Disfrazar el contenido real
-                    icon: './secure-icon.png' // Asume que tienes un icono de seguridad
-                });
-            }
-        }
+        </main>
+    </div>
 
-        // --- Inicialización de Firebase y Auth ---
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, collection, query, orderBy, setDoc, addDoc, serverTimestamp, deleteDoc, runTransaction, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        /**
-         * Inicializa el SDK de Firebase y la autenticación anónima.
-         */
-        async function initializeFirebase() {
-            try {
-                if (!firebaseConfig.apiKey) {
-                    return customAlert("Configuración Crítica", "La clave de Firebase (firebaseConfig) no está definida. Es necesaria para la conexión.");
-                }
-                
-                app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
+        // =========================================================================
+        // 🛑 CRÍTICO: REEMPLAZA ESTO CON TUS PROPIAS CREDENCIALES DE FIREBASE
+        // =========================================================================
+        const firebaseConfig = {
+            apiKey: "TU_API_KEY_AQUI", 
+            authDomain: "TU_AUTH_DOMAIN_AQUI",
+            projectId: "TU_PROJECT_ID_AQUI",
+            storageBucket: "TU_STORAGE_BUCKET_AQUI",
+            messagingSenderId: "TU_MESSAGING_SENDER_ID_AQUI",
+            appId: "TU_APP_ID_AQUI"
+        };
+        const appId = "secure-chat-v1"; // ID interno para el salt de cifrado
+        // =========================================================================
 
-                // Listener de estado de autenticación (CRÍTICO)
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        console.log("Autenticado como:", userId);
-                        
-                        // Inicia el flujo de la aplicación solo cuando hay un UID
-                        initializeUI();
-                    } else {
-                        userId = null;
-                        // Si no hay usuario, intenta iniciar sesión anónima
-                        signInAnonymously(auth).catch(e => {
-                            console.error("Error al iniciar sesión anónima:", e);
-                            customAlert("Error de Auth", "No se pudo iniciar la sesión anónima de Firebase. Revisa tu configuración y las reglas de seguridad.");
-                        });
-                    }
-                });
+        setLogLevel('error'); // Cambiado a 'error' para reducir ruido en la consola
+        let app;
+        let db;
+        let auth;
+        let userId = null;
+        let roomId = null; // El código de 12 caracteres / Fuente de derivación de clave
 
-            } catch (e) {
-                console.error("Error FATAL de inicialización de Firebase:", e);
-                customAlert("ERROR FATAL", `No se pudo iniciar Firebase. Detalle: ${e.message}`);
-            }
-        }
+        let symmetricKey = null; // El objeto de clave AES-GCM derivado
+        let pinHash = null; // Hash del PIN para el bloqueo local
+        
+        // --- Criptografía (Web Crypto API) ---
 
-        // --- Funciones Globales para Llamadas en el HTML ---
-        // Hacemos las funciones accesibles globalmente para los atributos onclick/onkeypress en el HTML.
-        window.handlePinInput = handlePinInput;
-        window.setRole = setRole;
-        window.setupPinAndGenerateCode = setupPinAndGenerateCode;
-        window.setupPinAndJoinRoom = setupPinAndJoinRoom;
-        window.cancelConnectionAndReset = cancelConnectionAndReset;
-        window.sendMessage = sendMessage;
-        window.customAlert = customAlert;
+        /**
+         * Deriva la clave simétrica AES-GCM 256-bit usando PBKDF2.
+         * @param {string} code El código de 12 caracteres (PSK).
+         * @returns {Promise<CryptoKey>} La clave CryptoKey.
+         */
+        async function deriveKey(code) {
+            const encoder = new TextEncoder();
+            // Usar el ID de la app como salt fijo (no es ideal, pero simplifica el intercambio)
+            const salt = encoder.encode(appId); 
+            const keyMaterial = await crypto.subtle.importKey(
+                "raw",
+                encoder.encode(code),
+                { name: "PBKDF2" },
+                false,
+                ["deriveKey"]
+            );
 
-        window.copyToClipboard = function(text) {
-            navigator.clipboard.writeText(text).then(() => {
-                customAlert("Copiado", "El código único ha sido copiado al portapapeles.");
-            }).catch(err => {
-                console.error('Error al copiar:', err);
-                customAlert("Error", "No se pudo copiar el código. Intenta seleccionarlo manualmente.");
-            });
-        };
+            return crypto.subtle.deriveKey(
+                {
+                    name: "PBKDF2",
+                    salt: salt,
+                    iterations: 100000,
+                    hash: "SHA-256",
+                },
+                keyMaterial,
+                { name: "AES-GCM", length: 256 },
+                true,
+                ["encrypt", "decrypt"]
+            );
+        }
 
-        // --- Arranque Inicial ---
-        document.addEventListener('DOMContentLoaded', initializeFirebase);
-    </script>
+        /**
+         * Cifra un mensaje.
+         * @param {string} text El mensaje en texto plano.
+         * @returns {Promise<{ciphertext: string, iv: string}>} El mensaje cifrado y el IV.
+         */
+        async function encryptMessage(text) {
+            if (!symmetricKey) throw new Error("Clave de cifrado no disponible.");
+
+            const encoder = new TextEncoder();
+            const data = encoder.encode(text);
+            const iv = crypto.getRandomValues(new Uint8Array(12)); // IV de 12 bytes para AES-GCM
+
+            const buffer = await crypto.subtle.encrypt(
+                { name: "AES-GCM", iv: iv },
+                symmetricKey,
+                data
+            );
+
+            const ciphertext = arrayBufferToBase64(buffer);
+            const ivString = arrayBufferToBase64(iv.buffer);
+
+            return { ciphertext, iv: ivString };
+        }
+
+        /**
+         * Descifra un mensaje.
+         * @param {string} ciphertext El texto cifrado en base64.
+         * @param {string} ivString El IV en base64.
+         * @returns {Promise<string>} El mensaje descifrado en texto plano.
+         */
+        async function decryptMessage(ciphertext, ivString) {
+            if (!symmetricKey) return "[Mensaje Cifrado - Clave Faltante]";
+            
+            try {
+                const dataBuffer = base64ToArrayBuffer(ciphertext);
+                const ivBuffer = base64ToArrayBuffer(ivString);
+
+                const decryptedBuffer = await crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: new Uint8Array(ivBuffer) },
+                    symmetricKey,
+                    dataBuffer
+                );
+
+                const decoder = new TextDecoder();
+                return decoder.decode(decryptedBuffer);
+            } catch (error) {
+                // Esto puede ocurrir si la clave de cifrado es incorrecta o si los datos están corruptos
+                console.error("Error al descifrar el mensaje:", error);
+                return "[Error de Descifrado]";
+            }
+        }
+
+        // --- Utilidades de Conversión ---
+
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+
+        function base64ToArrayBuffer(base64) {
+            const binary_string = atob(base64);
+            const len = binary_string.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary_string.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        /**
+         * 🛑 CRÍTICO DE SEGURIDAD: Función de hasheo mejorada (asíncrona con SHA-256)
+         * para no almacenar el PIN en texto plano.
+         * @param {string} pin El PIN de 4 dígitos.
+         * @returns {Promise<string>} El hash base64 del PIN.
+         */
+        async function hashPin(pin) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(pin);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            return arrayBufferToBase64(hashBuffer);
+        }
+
+        // --- Flujo de la Aplicación y Estado ---
+
+        /**
+         * Muestra una alerta personalizada (reemplaza alert()).
+         * @param {string} title Título de la alerta.
+         * @param {string} message Mensaje de la alerta.
+         */
+        function customAlert(title, message) {
+            document.getElementById('alertTitle').innerText = title;
+            document.getElementById('alertMessage').innerText = message;
+            document.getElementById('customAlert').classList.remove('hidden');
+        }
+        
+        /**
+         * Genera un ID de 12 caracteres alfanuméricos.
+         * @returns {string} El código de sala.
+         */
+        function generateRoomId() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let result = '';
+            for (let i = 0; i < 12; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return result;
+        }
+
+        /**
+         * Navega entre las pantallas (Setup, PIN Lock, Chat).
+         */
+        function showScreen(screenId) {
+            document.getElementById('setupScreen').classList.add('hidden');
+            document.getElementById('pinLockScreen').classList.add('hidden');
+            document.getElementById('chatScreen').classList.add('hidden');
+
+            document.getElementById(screenId).classList.remove('hidden');
+        }
+
+        /**
+         * Inicializa la interfaz al cargar.
+         */
+        async function initializeUI() {
+            const storedPinHash = localStorage.getItem('secureChatPinHash');
+            const storedRoomId = localStorage.getItem('secureChatRoomId');
+
+            if (storedPinHash && storedRoomId) {
+                // Usuario ya configuró la app: pedir PIN
+                pinHash = storedPinHash;
+                roomId = storedRoomId;
+                showScreen('pinLockScreen');
+            } else {
+                // Primer uso: ir a la configuración
+                showScreen('setupScreen');
+                document.getElementById('roleSelection').classList.remove('hidden');
+                document.getElementById('hostArea').classList.add('hidden');
+                document.getElementById('clientArea').classList.add('hidden');
+            }
+        }
+
+        // --- Configuración Inicial y Conexión (Pantalla 2) ---
+
+        /**
+         * Configura el rol del usuario (Host o Cliente).
+         */
+        window.setRole = function(role) {
+            document.getElementById('roleSelection').classList.add('hidden');
+            document.getElementById('hostArea').classList.add('hidden');
+            document.getElementById('clientArea').classList.add('hidden');
+
+            if (role === 'host') {
+                document.getElementById('hostArea').classList.remove('hidden');
+            } else {
+                document.getElementById('clientArea').classList.remove('hidden');
+            }
+        }
+
+        /**
+         * Host: Guarda el PIN y genera el código de sala.
+         */
+        window.setupPinAndGenerateCode = async function() {
+            const pin = document.getElementById('hostPinInput').value;
+            if (pin.length !== 4 || !/^\d+$/.test(pin)) {
+                return customAlert("Error de PIN", "El PIN debe ser una clave numérica de 4 dígitos.");
+            }
+
+            pinHash = await hashPin(pin); // Usar el hash asíncrono
+            roomId = generateRoomId();
+
+            try {
+                // 1. Derivar la clave simétrica
+                symmetricKey = await deriveKey(roomId);
+
+                // 2. Crear el documento de sala en Firestore (público)
+                const roomRef = doc(db, `secure_chats/${roomId}`); // Simplificado path
+                await setDoc(roomRef, {
+                    hostId: userId,
+                    createdAt: serverTimestamp(),
+                    status: 'waiting',
+                });
+
+                // 3. Persistir la configuración localmente
+                localStorage.setItem('secureChatPinHash', pinHash);
+                localStorage.setItem('secureChatRoomId', roomId);
+
+                // 4. Mostrar el código y esperar
+                document.getElementById('hostArea').classList.add('hidden');
+                document.getElementById('displayCode').innerText = roomId;
+                document.getElementById('hostWaitingArea').classList.remove('hidden');
+
+                // 5. Iniciar escucha de la sala
+                startRoomListener();
+                
+            } catch (e) {
+                console.error("Error al generar código y sala:", e);
+                customAlert("Error de Sistema", "No se pudo generar la sala. Revisa la conexión y reglas de Firebase.");
+            }
+        }
+
+        /**
+         * Cliente: Guarda el PIN e intenta unirse a la sala.
+         */
+        window.setupPinAndJoinRoom = async function() {
+            const pin = document.getElementById('clientPinInput').value;
+            const code = document.getElementById('joinCodeInput').value.toUpperCase();
+
+            if (pin.length !== 4 || !/^\d+$/.test(pin)) {
+                return customAlert("Error de PIN", "Tu PIN debe ser una clave numérica de 4 dígitos.");
+            }
+            if (code.length !== 12) {
+                return customAlert("Error de Código", "El Código Único debe tener 12 caracteres.");
+            }
+
+            roomId = code;
+            pinHash = await hashPin(pin); // Usar el hash asíncrono
+
+            try {
+                // 1. Derivar la clave simétrica
+                symmetricKey = await deriveKey(roomId);
+
+                // 2. Intentar unirse (si la sala existe, actualiza el estado)
+                const roomRef = doc(db, `secure_chats/${roomId}`);
+
+                await runTransaction(db, async (transaction) => {
+                    const roomDoc = await transaction.get(roomRef);
+
+                    if (!roomDoc.exists() || roomDoc.data().status === 'closed' || roomDoc.data().clientId) {
+                        throw "ROOM_NOT_FOUND";
+                    }
+
+                    // Actualiza el estado de la sala
+                    transaction.update(roomRef, {
+                        clientId: userId,
+                        status: 'active', // Marca la sala como activa
+                        joinedAt: serverTimestamp(),
+                    });
+                });
+
+                // 3. Persistir la configuración localmente
+                localStorage.setItem('secureChatPinHash', pinHash);
+                localStorage.setItem('secureChatRoomId', roomId);
+
+                // 4. Iniciar el chat
+                startChatSession();
+                
+            } catch (e) {
+                console.error("Error al unirse a la sala:", e);
+                document.getElementById('joinError').innerText = (e === "ROOM_NOT_FOUND") ? "Código no encontrado, sala ya cerrada o ya con cliente." : "Error de conexión. Intenta de nuevo.";
+                document.getElementById('joinError').classList.remove('hidden');
+                // Borrar clave para forzar nuevo intento
+                symmetricKey = null;
+                roomId = null;
+            }
+        }
+
+        /**
+         * Host: Resetea el proceso si el código no funciona o se pierde.
+         */
+        window.cancelConnectionAndReset = function() {
+            // Eliminar la sala antigua para evitar que alguien se conecte tarde
+            if (roomId) {
+                 deleteRoom(roomId);
+            }
+            // Limpiar estados y volver a empezar
+            pinHash = null;
+            symmetricKey = null;
+            localStorage.removeItem('secureChatPinHash');
+            localStorage.removeItem('secureChatRoomId');
+            
+            // Volver a la selección de rol
+            document.getElementById('hostWaitingArea').classList.add('hidden');
+            document.getElementById('roleSelection').classList.remove('hidden');
+            initializeUI();
+            customAlert("Código Cancelado", "Se ha generado un nuevo Código Único. El anterior ya no es válido.");
+        }
+
+        // --- Bloqueo de PIN (Pantalla 1) ---
+
+        /**
+         * Maneja el ingreso del PIN para desbloquear la aplicación.
+         */
+        window.handlePinInput = async function() {
+            const inputPin = document.getElementById('pinInput').value;
+            const inputHash = await hashPin(inputPin); // Usar el hash asíncrono
+
+            if (inputHash === pinHash && roomId) {
+                // Desbloqueo exitoso. Derivar la clave y cargar la sesión de chat.
+                document.getElementById('pinError').classList.add('hidden');
+                
+                try {
+                    // Re-derivar la clave simétrica con el roomId persistido
+                    symmetricKey = await deriveKey(roomId);
+                    startChatSession();
+                } catch (e) {
+                    console.error("Error al re-derivar la clave:", e);
+                    // Si falla, forzar reconfiguración
+                    resetAppAndLogout();
+                    customAlert("Error de Cifrado", "No se pudo restaurar la sesión segura. Por favor, reinicia la conexión.");
+                }
+
+            } else {
+                document.getElementById('pinError').classList.remove('hidden');
+                document.getElementById('pinInput').value = '';
+            }
+        }
+
+        // --- Chat Activo (Pantalla 3) ---
+
+        /**
+         * Inicia la sesión de chat después de la conexión o desbloqueo.
+         */
+        function startChatSession() {
+            showScreen('chatScreen');
+            document.getElementById('pinInput').value = '';
+            setupHeaderControls();
+            startMessagesListener();
+            startRoomListener();
+            requestNotificationPermission();
+        }
+
+        /**
+         * Configura los botones de la cabecera (Bloquear/Cerrar Sesión).
+         */
+        function setupHeaderControls() {
+            const controls = document.getElementById('headerControls');
+            controls.innerHTML = `
+                <button onclick="lockApp()" class="bg-[#21262d] text-gray-300 px-3 py-1 rounded-lg border border-[#30363d] hover:bg-[#30363d] transition duration-200">
+                    Bloquear 🔒
+                </button>
+                <button onclick="closeSessionAndWipe()" class="bg-red-700 text-white px-3 py-1 rounded-lg hover:bg-red-800 transition duration-200">
+                    Cerrar App ❌
+                </button>
+            `;
+        }
+
+        let roomUnsubscribe;
+        function startRoomListener() {
+            if (roomUnsubscribe) roomUnsubscribe();
+
+            const roomRef = doc(db, `secure_chats/${roomId}`);
+            roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    
+                    // Si el estado pasa a 'active' y el Host estaba esperando
+                    if (data.status === 'active' && document.getElementById('hostWaitingArea').classList.contains('hidden') === false) {
+                        document.getElementById('hostWaitingArea').classList.add('hidden');
+                        startChatSession();
+                    }
+
+                    // Si la sala se cerró remotamente
+                    if (data.status === 'closed') {
+                        customAlert("SESIÓN CERRADA", "Tu compañero ha cerrado la sesión. El historial de chat ha sido eliminado. Debes iniciar una nueva conexión.");
+                        resetAppAndLogout();
+                    }
+                } else {
+                    // Si el documento de sala ya no existe (borrado remoto)
+                    if (roomId && (document.getElementById('chatScreen').classList.contains('hidden') === false)) {
+                        customAlert("CONEXIÓN INTERRUMPIDA", "La sala de chat fue eliminada remotamente. Por favor, reinicia la conexión.");
+                        resetAppAndLogout();
+                    }
+                }
+            });
+        }
+
+        let messagesUnsubscribe;
+        function startMessagesListener() {
+            if (messagesUnsubscribe) messagesUnsubscribe();
+
+            const messagesCol = collection(db, `secure_chats/${roomId}/messages`);
+            const q = query(messagesCol, orderBy("timestamp", "asc"));
+
+            messagesUnsubscribe = onSnapshot(q, async (snapshot) => {
+                const chatArea = document.getElementById('chatArea');
+                
+                const isNearBottom = chatArea.scrollHeight - chatArea.clientHeight <= chatArea.scrollTop + 10;
+                
+                // Usaremos un fragmento de documento para un re-renderizado más limpio
+                const fragment = document.createDocumentFragment();
+
+                for (const change of snapshot.docChanges()) {
+                    if (change.type === "added") {
+                        const data = change.doc.data();
+                        const decryptedText = await decryptMessage(data.ciphertext, data.iv);
+                        renderMessage(data.senderId, decryptedText, fragment);
+
+                        if (data.senderId !== userId && !document.hasFocus()) {
+                            sendDisguisedNotification(decryptedText);
+                        }
+                    }
+                }
+
+                // Limpiar solo los mensajes antiguos (excluir la alerta de sistema si existe)
+                chatArea.querySelectorAll('.flex').forEach(e => e.remove());
+
+                // Agregar los mensajes actualizados
+                chatArea.appendChild(fragment);
+                
+                // Mantener el scroll al fondo si ya estaba cerca del fondo
+                if (isNearBottom) {
+                    chatArea.scrollTop = chatArea.scrollHeight;
+                }
+            });
+        }
+        
+        /**
+         * Renderiza un mensaje en la interfaz.
+         */
+        function renderMessage(senderId, text, container) {
+            const isSent = senderId === userId;
+            const alignment = isSent ? 'justify-end' : 'justify-start';
+
+            const divFlex = document.createElement('div');
+            divFlex.className = `flex ${alignment}`;
+
+            const divBubble = document.createElement('div');
+            divBubble.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
+
+            const pText = document.createElement('p');
+            pText.className = "text-sm";
+            pText.innerText = text;
+
+            divBubble.appendChild(pText);
+            divFlex.appendChild(divBubble);
+            container.appendChild(divFlex);
+        }
+
+        /**
+         * Envía un mensaje cifrado a Firestore.
+         */
+        window.sendMessage = async function() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            try {
+                const { ciphertext, iv } = await encryptMessage(text);
+                
+                // Ruta simplificada: secure_chats/{roomId}/messages/{messageId}
+                const messagesCol = collection(db, `secure_chats/${roomId}/messages`);
+                await addDoc(messagesCol, {
+                    senderId: userId,
+                    ciphertext: ciphertext,
+                    iv: iv,
+                    timestamp: serverTimestamp(),
+                });
+                input.value = ''; // Limpiar input
+            } catch (e) {
+                console.error("Error al enviar mensaje:", e);
+                customAlert("Error de Envío", "No se pudo enviar el mensaje cifrado. ¿La sesión sigue activa?");
+            }
+        }
+
+        // --- Control de Sesión y Limpieza ---
+
+        /**
+         * Borra el documento de sala (y sus subcolecciones) de Firestore.
+         */
+        async function deleteRoom(id) {
+            if (!id || !db) return;
+            try {
+                const roomRef = doc(db, `secure_chats/${id}`);
+                await setDoc(roomRef, { status: 'closed' }, { merge: true });
+                await deleteDoc(roomRef); // Borrar el documento raíz
+                console.log(`Sala ${id} eliminada/marcada como cerrada.`);
+            } catch (e) {
+                console.error(`Error al borrar sala ${id}:`, e);
+            }
+        }
+
+        /**
+         * Bloquea la aplicación y vuelve a la pantalla de PIN.
+         */
+        window.lockApp = function() {
+            showScreen('pinLockScreen');
+            document.getElementById('pinInput').value = '';
+            document.getElementById('pinError').classList.add('hidden');
+        }
+
+        /**
+         * Cierra la sesión (cierra la sala remotamente y borra todo local).
+         */
+        window.closeSessionAndWipe = async function() {
+            if (messagesUnsubscribe) messagesUnsubscribe();
+            if (roomUnsubscribe) roomUnsubscribe();
+
+            if (roomId) {
+                await deleteRoom(roomId);
+            }
+
+            resetAppAndLogout();
+            customAlert("Sesión Finalizada", "El chat ha sido cerrado y toda la información de la conexión se ha eliminado localmente.");
+        }
+
+        /**
+         * Resetea el estado de la app y el usuario de Firebase.
+         */
+        function resetAppAndLogout() {
+            localStorage.removeItem('secureChatPinHash');
+            localStorage.removeItem('secureChatRoomId');
+            roomId = null;
+            pinHash = null;
+            symmetricKey = null;
+            
+            if (auth) auth.signOut();
+            
+            document.getElementById('headerControls').innerHTML = '';
+            initializeUI();
+        }
+
+        // --- Notificaciones ---
+
+        function requestNotificationPermission() {
+            if (!("Notification" in window)) return;
+            if (Notification.permission !== "granted") {
+                Notification.requestPermission();
+            }
+        }
+
+        function sendDisguisedNotification(text) {
+            if (Notification.permission === "granted") {
+                new Notification(":: RED-SECURE :: Nuevo Mensaje", {
+                    body: "Mensaje Recibido (Cifrado localmente).",
+                    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%231f6feb"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 18.27c-3.79-1.1-6.5-5.11-6.5-9.27v-4.14l6.5-2.81 6.5 2.81v4.14c0 4.16-2.71 8.17-6.5 9.27zM11 7h2v6h-2V7zm0 8h2v2h-2v-2z"/></svg>' // SVG de un escudo
+                });
+            }
+        }
+
+        // --- Inicialización de Firebase y Auth ---
+
+        async function initializeFirebase() {
+            try {
+                if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "TU_API_KEY_AQUI") {
+                    // Muestra error si la configuración es la predeterminada o falta.
+                    return customAlert("Configuración Crítica", "Por favor, reemplaza 'TU_API_KEY_AQUI' y el resto de los marcadores con tus credenciales de Firebase para iniciar la conexión.");
+                }
+                
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        console.log("Autenticado como:", userId);
+                        initializeUI();
+                    } else {
+                        userId = null;
+                        signInAnonymously(auth).catch(e => {
+                            console.error("Error al iniciar sesión anónima:", e);
+                            customAlert("Error de Auth", "No se pudo iniciar la sesión anónima de Firebase. Revisa tu conexión y las reglas de seguridad.");
+                        });
+                    }
+                });
+
+            } catch (e) {
+                console.error("Error FATAL de inicialización de Firebase:", e);
+                customAlert("ERROR FATAL", `No se pudo iniciar Firebase. Detalle: ${e.message}`);
+            }
+        }
+
+        // --- Arranque Inicial ---
+        window.customAlert = customAlert;
+        window.copyToClipboard = function(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                customAlert("Copiado", "El código único ha sido copiado al portapapeles.");
+            }).catch(err => {
+                console.error('Error al copiar:', err);
+                customAlert("Error", "No se pudo copiar el código.");
+            });
+        };
+        
+        document.addEventListener('DOMContentLoaded', initializeFirebase);
+    </script>
+</body>
 </html>
