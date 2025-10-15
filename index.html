@@ -1,21 +1,24 @@
+// src/App.jsx
+
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc } from 'firebase/firestore';
 
-// 🔑 CONFIGURACIÓN FINAL: ESTA ES LA CONFIGURACIÓN ESTÁNDAR DE LA APP WEB DE FIREBASE.
-// Se asume que la Autenticación Anónima está habilitada en la Consola.
+// 🔑 CONFIGURACIÓN FINAL: CARGA DESDE VARIABLES DE ENTORNO
+// Nunca subas las claves directamente a GitHub.
 const firebaseConfig = {
-  apiKey: "AIzaSyA65iS3AUpfOGeZ_Vmi-DZXD1UHDO9l3s0", 
-  authDomain: "chat-app-f6527.firebaseapp.com",
-  projectId: "chat-app-f6527", // El ID de tu proyecto
-  storageBucket: "chat-app-f6527.firebasestorage.app",
-  messagingSenderId: "411702105463",
-  appId: "1:411702105463:web:66a0c6bc69559cf190bd72"
+  // Asegúrate de que las variables de entorno comiencen con VITE_ si usas Vite
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,  
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID, 
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-const appId = firebaseConfig.projectId; // Usamos el ID del proyecto como ID de la App para la ruta de Firestore
-const initialAuthToken = null; // No usamos token personalizado en el entorno de GitHub
+const appId = firebaseConfig.projectId; 
+const initialAuthToken = null; 
 
 // Utility to generate a consistent color based on userId
 const generateColor = (str) => {
@@ -42,9 +45,10 @@ const App = () => {
 
   // 1. Inicialización de Firebase y Autenticación
   useEffect(() => {
-    // 1.1 Validación inicial de la clave (simplificada, ya que la clave está definida)
+    // Validación inicial de la clave
     if (!firebaseConfig.apiKey) {
-      setStatus('Error: La Clave API no está definida en la configuración.');
+      setStatus('Error: La Clave API no está definida. Verifica tu archivo .env.');
+      console.error('firebaseConfig:', firebaseConfig);
       return;
     }
 
@@ -52,17 +56,15 @@ const App = () => {
     let unsubscribeAuth = null;
     
     try {
-      // 1.2 Inicialización de App
-      console.log("Intentando inicializar Firebase con la configuración proporcionada...");
+      console.log("Intentando inicializar Firebase...");
       const app = initializeApp(firebaseConfig);
-      console.log("Firebase App inicializada con éxito.");
       
       initializedAuth = getAuth(app);
       const initializedDb = getFirestore(app);
 
       setDb(initializedDb);
 
-      // 1.3 Listener para el estado de autenticación
+      // Listener para el estado de autenticación
       unsubscribeAuth = onAuthStateChanged(initializedAuth, (user) => {
         if (user) {
           setCurrentUser(user);
@@ -73,31 +75,24 @@ const App = () => {
         }
       });
 
-      // 1.4 Lógica de inicio de sesión inicial (solo anónima)
+      // Lógica de inicio de sesión inicial (solo anónima)
       const signIn = async () => {
         try {
-          // Intentar inicio de sesión anónima
           await signInAnonymously(initializedAuth);
         } catch (error) {
           console.error('Error de autenticación inicial:', error);
-          
           let errorMessage = error.message;
 
           // Manejo de errores detallado
-          if (error.code === 'auth/admin-restricted-operation') {
-            errorMessage = "ERROR CRÍTICO: 'auth/admin-restricted-operation'. Tu cuenta o proyecto de GCP/Firebase tiene una restricción de seguridad/política que bloquea la creación de nuevos usuarios anónimos. **ACCIÓN REQUERIDA:** Asegúrate de que la Clave API no tenga restricciones en GCP o revisa las políticas de la organización.";
-          } else if (error.code === 'auth/operation-not-allowed') {
+          if (error.code === 'auth/operation-not-allowed') {
             errorMessage = "ERROR: La autenticación anónima NO está habilitada en la consola de Firebase. Por favor, habilítala.";
           } else if (error.code === 'auth/configuration-not-found') {
-            errorMessage = "ERROR CRÍTICO DE CONFIGURACIÓN: El problema es la Consola de Firebase. **ACCIÓN URGENTE REQUERIDA:** Habilitar el método de inicio de sesión **'Anonymous'** en Firebase Authentication -> Sign-in method.";
-          } else if (error.code === 'auth/api-keys-are-not-supported-by-this-api') {
-            errorMessage = "ERROR DE TIPO DE CLAVE: Usa la 'apiKey' que comienza con AIzaSy... de la configuración de tu App Web.";
+            errorMessage = "ERROR CRÍTICO: Habilita 'Anonymous' en Firebase Authentication -> Sign-in method.";
           } else if (error.code === 'auth/api-key-not-valid') {
-            errorMessage = "ERROR CRÍTICO: Clave API inválida. Asegúrate de que la clave web (AIzaSy...) esté habilitada para Identity Toolkit API.";
+            errorMessage = "ERROR CRÍTICO: Clave API inválida. Revisa tu .env.";
           }
 
           setStatus(`Error de Autenticación: ${errorMessage}`);
-          console.log("Configuración de Firebase utilizada (Verifica estos valores):", firebaseConfig); 
         }
       };
 
@@ -117,14 +112,12 @@ const App = () => {
   useEffect(() => {
     if (db && currentUser) {
       setStatus('Cargando mensajes...');
-      // Usamos la ruta de datos públicos
+      // Usamos la ruta de datos públicos: /artifacts/{appId}/public/data/chat_messages
       const collectionPath = `/artifacts/${appId}/public/data/chat_messages`;
       const messagesCollection = collection(db, collectionPath);
 
-      // Consulta: ordenar por la marca de tiempo (serverTimestamp)
       const q = query(messagesCollection, orderBy('timestamp', 'asc'));
 
-      // onSnapshot para obtener actualizaciones en tiempo real
       const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
         const fetchedMessages = snapshot.docs.map(doc => ({
           id: doc.id,
@@ -148,8 +141,6 @@ const App = () => {
   }, [messages]);
 
 // 4. Enviar Mensaje
-import { doc, setDoc, getDoc } from "firebase/firestore";
-
 const handleSendMessage = useCallback(async (e) => {
   e.preventDefault();
   if (newMessage.trim() === '' || !db || !currentUser) return;
@@ -157,7 +148,7 @@ const handleSendMessage = useCallback(async (e) => {
   try {
     const appId = firebaseConfig.projectId;
 
-    // 📁 Paso 1: crear documento base si no existe
+    // Paso 1: Crear documento base si no existe (Necesario para la estructura de la colección)
     const baseDocRef = doc(db, `artifacts/${appId}/public/data`);
     const baseDocSnap = await getDoc(baseDocRef);
 
@@ -169,7 +160,7 @@ const handleSendMessage = useCallback(async (e) => {
       });
     }
 
-    // 💬 Paso 2: insertar mensaje
+    // Paso 2: insertar mensaje en la colección
     const messagesCollection = collection(db, `artifacts/${appId}/public/data/chat_messages`);
     await addDoc(messagesCollection, {
       text: newMessage,
@@ -190,9 +181,9 @@ const handleSendMessage = useCallback(async (e) => {
       
       {/* Header y Estado */}
       <header className="py-3 px-4 bg-gray-800 rounded-lg shadow-md mb-4 flex justify-between items-center">
-        <h1 className="text-xl font-bold text-indigo-400">Secure Chat (ID de App: {appId.substring(0, 8)}...)</h1>
+        <h1 className="text-xl font-bold text-indigo-400">Secure Chat (ID de App: {appId ? appId.substring(0, 8) + '...' : 'Cargando...'})</h1>
         <div className="text-xs text-gray-400">
-            Estado: <span className="font-mono text-sm text-green-400">{status}</span>
+          Estado: <span className="font-mono text-sm text-green-400">{status}</span>
         </div>
       </header>
 
