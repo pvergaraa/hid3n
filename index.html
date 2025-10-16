@@ -106,10 +106,25 @@
                 </div>
         </header>
 
-<main class="flex-grow p-4 overflow-hidden relative">
+        <main class="flex-grow p-4 overflow-hidden relative">
     
-    <div id="setupScreen" class="absolute inset-0 bg-[#161b22] z-40 flex flex-col items-center justify-center p-4 transition-opacity duration-300">
+    <div id="pinLockScreen" class="absolute inset-0 bg-[#161b22] z-50 flex flex-col items-center justify-center p-4 transition-opacity duration-300 hidden">
+        <div class="p-8 bg-[#21262d] rounded-xl w-full max-w-sm shadow-lg border border-[#30363d] text-center">
+            <h2 class="text-xl font-bold mb-4 text-[#58a6ff]">Ingreso Requerido</h2>
+            <p class="mb-4 text-gray-400">Ingresa tu PIN de 4 dígitos para acceder a esta sala.</p>
+            
+            <input type="number" id="accessPinInput" placeholder="PIN de 4 dígitos" maxlength="4" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-lg focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="if(this.value.length > this.maxLength) this.value = this.value.slice(0, this.maxLength);">
+            
+            <button onclick="unlockApp()" class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200">
+                Acceder a la Sala
+            </button>
+            
+            <button onclick="closeSessionAndWipe()" class="w-full bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-700 transition duration-200 mt-4">
+                Cerrar Sesión
+            </button>
+            <p id="pinError" class="text-red-400 mt-3 hidden">PIN incorrecto. Intenta de nuevo.</p>
         </div>
+    </div>
     
     </main>
 
