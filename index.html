@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RED-SECURE Chat</title>
     <script src="https://cdn.tailwindcss.com"></script> 
-
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
         
@@ -671,13 +670,21 @@
             });
         }
 
-        async function deleteRoom(id) {
-            try {
-                await deleteDoc(doc(db, `secure_chats/${id}`));
-            } catch (e) {
-                console.error("Error al borrar la sala:", e);
-            }
-        }
+      // LÍNEA ~656
+async function deleteRoom(id) {
+    try {
+        const roomRef = doc(db, `secure_chats/${id}`);
+        // 🛑 CAMBIO CLAVE: Cambiar el estado a 'closed' en lugar de borrar
+        await setDoc(roomRef, { status: 'closed' }, { merge: true }); 
+        
+        // Opcional: Podrías mantener el borrado para limpiar la BD, pero 
+        // hacerlo después de un pequeño retraso para asegurar que el listener del cliente lo capte.
+        // await deleteDoc(doc(db, `secure_chats/${id}`)); 
+
+    } catch (e) {
+        console.error("Error al cerrar la sala:", e);
+    }
+}
 
         function resetAppAndLogout() {
             if (messagesUnsubscribe) messagesUnsubscribe();
