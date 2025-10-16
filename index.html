@@ -407,10 +407,14 @@
         // --- FUNCIONES DE UTILDAD Y NAVEGACIÓN ---
 
 // Muestra o esconde las pantallas principales
+// --- FUNCIONES DE UTILDAD Y NAVEGACIÓN ---
+
+// Muestra o esconde las pantallas principales
 function showScreen(screenId) {
+    // ... (El código de esta función es largo, pero asegúrate de que esté completa)
     document.getElementById('setupScreen').classList.add('hidden');
     document.getElementById('chatScreen').classList.add('hidden');
-    document.getElementById('pinLockScreen').classList.add('hidden'); // CRÍTICO: Este elemento también se manipula aquí
+    document.getElementById('pinLockScreen').classList.add('hidden');
     
     // ... (resto de la función showScreen)
 }
@@ -421,7 +425,7 @@ function lockApp() {
 }
 
 // Desbloquea la aplicación
-function unlockApp() { // <--- ESTA ES LA FUNCIÓN QUE FALTA
+function unlockApp() { 
     const pin = document.getElementById('accessPinInput').value;
     const storedPin = localStorage.getItem('securePin');
 
@@ -434,6 +438,8 @@ function unlockApp() { // <--- ESTA ES LA FUNCIÓN QUE FALTA
         document.getElementById('pinError').classList.remove('hidden');
     }
 }
+
+// ... (Las demás funciones siguen aquí)
 
 // ... (El resto de funciones como deleteRoom, resetAppAndLogout, closeSessionAndWipe, etc.)
 
