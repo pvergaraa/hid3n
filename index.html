@@ -726,11 +726,6 @@ function unlockApp() {
             container.appendChild(divFlex);
         }
 
-        // Funciones de cierre de sesión (agregadas)
-        function lockApp() {
-            showScreen('pinLockScreen');
-        }
-
         async function deleteRoom(id) {
             try {
                 await deleteDoc(doc(db, `secure_chats/${id}`));
