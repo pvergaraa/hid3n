@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema de Conexión Segura - Beta</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
+            
+  <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
         body {
             font-family: 'Inter', sans-serif;
             background-color: #0d1117; /* Fondo oscuro tipo terminal */
             color: #c9d1d9;
-            min-height: 100vh;
+            min-height: 100vh; /* CRÍTICO: Asegura que el body ocupe el 100% de la altura de la ventana */
             display: flex;
             align-items: center;
             justify-content: center;
@@ -19,7 +20,8 @@
         .container {
             max-width: 480px;
             width: 100%;
-            height: 95vh;
+            /* AJUSTE CRÍTICO: Usar 100% de la altura disponible, ya que el body tiene min-height: 100vh */
+            height: 100%; 
             display: flex;
             flex-direction: column;
             background-color: #161b22;
@@ -27,6 +29,13 @@
             border: 1px solid #30363d;
             border-radius: 12px;
             overflow: hidden;
+        }
+        /* Aseguramos que main, donde está la setupScreen, use el espacio flexible */
+        .container main {
+            flex-grow: 1; 
+            display: flex;
+            flex-direction: column;
+            height: 100%; /* Asegura que el main use toda la altura flexible */
         }
         .chat-area {
             flex-grow: 1;
@@ -83,6 +92,7 @@
             100% { transform: rotate(360deg); }
         }
     </style>
+            
 </head>
 <body>
 
