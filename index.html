@@ -404,6 +404,24 @@
         }
 
 
+// --- FUNCIONES DE ASIGNACIÓN DE ROL ---
+
+function setRole(role) {
+    // Almacena el rol seleccionado
+    localStorage.setItem('userRole', role);
+
+    // Esconde la selección de rol
+    document.getElementById('roleSelection').classList.add('hidden');
+    
+    // Muestra el área de configuración de PIN/Código
+    if (role === 'host') {
+        document.getElementById('hostArea').classList.remove('hidden');
+    } else {
+        document.getElementById('clientArea').classList.remove('hidden');
+    }
+}
+        
+        
         // --- FUNCIONES DE UTILDAD Y NAVEGACIÓN ---
 
 // Muestra o esconde las pantallas principales
