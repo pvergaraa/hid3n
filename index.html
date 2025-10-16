@@ -8,92 +8,95 @@
 
     </head>
             
-  <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0d1117; /* Fondo oscuro tipo terminal */
-            color: #c9d1d9;
-            min-height: 100vh; /* CRÍTICO: Asegura que el body ocupe el 100% de la altura de la ventana */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .container {
-            max-width: 480px;
-            width: 100%;
-            /* AJUSTE CRÍTICO: Usar 100% de la altura disponible, ya que el body tiene min-height: 100vh */
-            height: 100%; 
-            display: flex;
-            flex-direction: column;
-            background-color: #161b22;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-            border: 1px solid #30363d;
-            border-radius: 12px;
-            overflow: hidden;
-        }
-        /* Aseguramos que main, donde está la setupScreen, use el espacio flexible */
-        .container main {
-            flex-grow: 1; 
-            display: flex;
-            flex-direction: column;
-            height: 100%; /* Asegura que el main use toda la altura flexible */
-        }
-        .chat-area {
-            flex-grow: 1;
-            overflow-y: auto;
-            padding: 16px;
-            scroll-behavior: smooth;
-        }
-        .message-bubble {
-            max-width: 80%;
-            padding: 10px 14px;
-            border-radius: 12px;
-            margin-bottom: 8px;
-            word-wrap: break-word;
-        }
-        .sent {
-            background-color: #1f6feb;
-            align-self: flex-end;
-            margin-left: auto;
-            border-bottom-right-radius: 4px;
-        }
-        .received {
-            background-color: #21262d;
-            align-self: flex-start;
-            margin-right: auto;
-            border: 1px solid #30363d;
-            border-bottom-left-radius: 4px;
-        }
-        input[type="number"]::-webkit-inner-spin-button,
-        input[type="number"]::-webkit-outer-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-        }
-        .system-alert {
-            background-color: #ff0000;
-            color: #ffffff;
-            font-weight: bold;
-            padding: 8px 12px;
-            border-radius: 8px;
-            margin: 10px auto;
-            text-align: center;
-            animation: pulse-red 1s infinite alternate;
-        }
-        @keyframes pulse-red {
-            from { opacity: 0.8; }
-            to { opacity: 1; }
-        }
-        .loader {
-            border-color: #58a6ff;
-            border-top-color: transparent;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
+ <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        
+        /* CRÍTICO: Asegura que todo el viewport se use */
+        html, body {
+            height: 100%; 
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Evita barras de desplazamiento innecesarias */
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; 
+            color: #c9d1d9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            max-width: 480px;
+            width: 100%;
+            /* AJUSTE CRÍTICO: La altura del contenedor debe ser la misma que la del body */
+            height: 100vh; /* Usamos vh para asegurar que ocupe toda la ventana visible */
+            display: flex;
+            flex-direction: column;
+            background-color: #161b22;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        /* ... El resto de tus estilos (chat-area, message-bubble, etc.) siguen igual ... */
+        .chat-area {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 16px;
+            scroll-behavior: smooth;
+        }
+        .message-bubble {
+            max-width: 80%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            word-wrap: break-word;
+        }
+        .sent {
+            background-color: #1f6feb;
+            align-self: flex-end;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+        }
+        .received {
+            background-color: #21262d;
+            align-self: flex-start;
+            margin-right: auto;
+            border: 1px solid #30363d;
+            border-bottom-left-radius: 4px;
+        }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .system-alert {
+            background-color: #ff0000;
+            color: #ffffff;
+            font-weight: bold;
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin: 10px auto;
+            text-align: center;
+            animation: pulse-red 1s infinite alternate;
+        }
+        @keyframes pulse-red {
+            from { opacity: 0.8; }
+            to { opacity: 1; }
+        }
+        .loader {
+            border-color: #58a6ff;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
             
 </head>
 <body>
@@ -142,13 +145,14 @@
     </button>
 </div>
                     
-                    <div id="hostArea" class="hidden">
-                        <p class="mb-3 text-center text-sm text-gray-400">Paso 1: Define tu PIN de 4 dígitos para futuros accesos.</p>
-                        <input type="number" id="hostPinInput" placeholder="PIN de 4 dígitos" maxlength="4" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-lg focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="if(this.value.length > this.maxLength) this.value = this.value.slice(0, this.maxLength);">
-                        <button onclick="setupPinAndGenerateCode()" class="w-full bg-[#1f6feb] text-white py-3 rounded-lg font-semibold hover:bg-[#1a55b3] transition duration-200">
-                            Guardar PIN y Generar Código Único
-                        </button>
-                    </div>
+                  <div id="hostArea" class="hidden">
+    <p class="mb-3 text-center text-sm text-gray-400">Paso 1: Define tu PIN de 4 dígitos para futuros accesos.</p>
+    <input type="number" id="hostPinInput" placeholder="PIN de 4 dígitos" maxlength="4" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-lg focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="if(this.value.length > this.maxLength) this.value = this.value.slice(0, this.maxLength);">
+    
+    <button onclick="setupPinAndGenerateCode()" class="w-full bg-[#1f6feb] text-white py-3 rounded-lg font-semibold hover:bg-[#1a55b3] transition duration-200">
+        Guardar PIN y Generar Código Único
+    </button>
+</div>
 
                     <div id="hostWaitingArea" class="hidden text-center mt-6">
                         <p class="text-yellow-400 mb-2 font-semibold">CÓDIGO ÚNICO GENERADO (COMPARTIR SOLO UNA VEZ):</p>
