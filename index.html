@@ -403,37 +403,45 @@
             return result;
         }
 
-        /**
-         * Navega entre las pantallas (Setup, PIN Lock, Chat).
-         */
-        function showScreen(screenId) {
-            document.getElementById('setupScreen').classList.add('hidden');
-            document.getElementById('pinLockScreen').classList.add('hidden');
-            document.getElementById('chatScreen').classList.add('hidden');
 
-            document.getElementById(screenId).classList.remove('hidden');
-        }
+        // --- FUNCIONES DE UTILDAD Y NAVEGACIÓN ---
 
-        /**
-         * Inicializa la interfaz al cargar.
-         */
-        async function initializeUI() {
-            const storedPinHash = localStorage.getItem('secureChatPinHash');
-            const storedRoomId = localStorage.getItem('secureChatRoomId');
+// Muestra o esconde las pantallas principales
+function showScreen(screenId) {
+    document.getElementById('setupScreen').classList.add('hidden');
+    document.getElementById('chatScreen').classList.add('hidden');
+    document.getElementById('pinLockScreen').classList.add('hidden'); // CRÍTICO: Este elemento también se manipula aquí
+    
+    // ... (resto de la función showScreen)
+}
 
-            if (storedPinHash && storedRoomId) {
-                // Usuario ya configuró la app: pedir PIN
-                pinHash = storedPinHash;
-                roomId = storedRoomId;
-                showScreen('pinLockScreen');
-            } else {
-                // Primer uso: ir a la configuración
-                showScreen('setupScreen');
-                document.getElementById('roleSelection').classList.remove('hidden');
-                document.getElementById('hostArea').classList.add('hidden');
-                document.getElementById('clientArea').classList.add('hidden');
-            }
-        }
+// Bloquea la aplicación (requiere PIN)
+function lockApp() {
+    showScreen('pinLockScreen');
+}
+
+// Desbloquea la aplicación
+function unlockApp() { // <--- ESTA ES LA FUNCIÓN QUE FALTA
+    const pin = document.getElementById('accessPinInput').value;
+    const storedPin = localStorage.getItem('securePin');
+
+    if (pin && pin === storedPin) {
+        document.getElementById('pinError').classList.add('hidden');
+        showScreen('chatScreen');
+        // El resto del flujo de conexión se maneja dentro de startChatSession o listener
+    } else {
+        document.getElementById('pinError').innerText = "PIN incorrecto. Intenta de nuevo.";
+        document.getElementById('pinError').classList.remove('hidden');
+    }
+}
+
+// ... (El resto de funciones como deleteRoom, resetAppAndLogout, closeSessionAndWipe, etc.)
+
+
+
+
+
+        
 
         // --- Autenticación y Carga de la UI (Añadido/Corregido) ---
         onAuthStateChanged(auth, (user) => {
