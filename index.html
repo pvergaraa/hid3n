@@ -8,13 +8,13 @@
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
-    
+        
         html, body {
             /* Asegura que el body ocupe todo el espacio para el centrado */
             height: 100%; 
             margin: 0;
             padding: 0;
-            display: flex; /* CRÍTICO: Para centrar el contenedor */
+            display: flex; 
             align-items: center;
             justify-content: center;
             background-color: #0d1117; 
@@ -25,7 +25,6 @@
         .container {
             max-width: 480px;
             width: 100%;
-            /* CRÍTICO: Altura fija para que no se recorte */
             height: 95vh; 
             display: flex;
             flex-direction: column;
@@ -36,11 +35,10 @@
             overflow: hidden;
         }
 
-        /* Aseguramos que main, donde están las pantallas, ocupe el espacio flexible */
         .container main {
             flex-grow: 1; 
-            overflow: hidden; /* Importante para el área de chat */
-            position: relative; /* CRÍTICO: Para que setupScreen y pinLockScreen se posicionen correctamente */
+            overflow: hidden; 
+            position: relative; 
         }
         
         .chat-area {
@@ -75,7 +73,7 @@
             margin: 0;
         }
         .system-alert {
-            background-color: #30363d; /* Cambio de color para que sea menos intrusivo */
+            background-color: #30363d; 
             color: #c9d1d9;
             font-weight: normal;
             padding: 8px 12px;
@@ -212,10 +210,10 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, collection, query, orderBy, setDoc, addDoc, serverTimestamp, deleteDoc, runTransaction, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- 2. Configuración de Firebase (ACTUALIZADA con clave correcta) ---
+        // --- 2. Configuración de Firebase (FINAL Y VERIFICADA) ---
         const firebaseConfig = {
-            // Clave API actualizada según la última captura de la consola de Firebase
-            apiKey: "AIzaSyA65iS3AUpfOGeZ_Vmi-DZXD1UHDO9l3s0",
+            // Clave API final actualizada según la última captura de la consola de Firebase
+            apiKey: "AIzaSyA6Si3AUpfOGeZ_Vmi-DZXD1UHDO9l3s0",
             authDomain: "chat-app-f6527.firebaseapp.com",
             projectId: "chat-app-f6527",
             storageBucket: "chat-app-f6527.firebasestorage.app",
@@ -234,6 +232,7 @@
         let roomId = null; 
         let symmetricKey = null; 
         let pinHash = null; 
+        let userRole = null;
         let messagesUnsubscribe = null;
         let roomUnsubscribe = null;
 
@@ -406,8 +405,11 @@
                 document.getElementById('pinError').classList.add('hidden');
                 
                 const persistedRoomId = localStorage.getItem('secureChatRoomId');
-                if(persistedRoomId) {
+                const persistedRole = localStorage.getItem('userRole'); // Recuperar el rol
+
+                if(persistedRoomId && persistedRole) {
                     roomId = persistedRoomId;
+                    userRole = persistedRole; // Establecer el rol global
                     try {
                          // Re-derivar clave y continuar el chat
                         symmetricKey = await deriveKey(roomId);
@@ -432,7 +434,9 @@
          * Configura el rol del usuario (Host o Cliente).
          */
         window.setRole = function(role) {
+            userRole = role; // Establecer variable global
             localStorage.setItem('userRole', role);
+            
             document.getElementById('roleSelection').classList.add('hidden');
             document.getElementById('hostArea').classList.add('hidden');
             document.getElementById('clientArea').classList.add('hidden');
@@ -473,7 +477,7 @@
                 document.getElementById('displayCode').innerText = roomId;
                 document.getElementById('hostWaitingArea').classList.remove('hidden');
 
-                startRoomListener();
+                startRoomListener(); // Iniciar el listener aquí
                 
             } catch (e) {
                 console.error("Error al generar código y sala:", e);
@@ -548,7 +552,6 @@
             
             document.getElementById('hostWaitingArea').classList.add('hidden');
             document.getElementById('roleSelection').classList.remove('hidden');
-            // La UI se inicializará automáticamente con initializeUI() que es llamada al final del código
             initializeUI(); 
             customAlert("Código Cancelado", "Se ha generado un nuevo Código Único. El anterior ya no es válido.");
         }
@@ -637,6 +640,8 @@
                         const messageData = change.doc.data();
                         const decryptedText = await decryptMessage(messageData.ciphertext, messageData.iv);
                         renderMessage(messageData.senderId, decryptedText);
+                        
+                        // Solo enviar notificación si el mensaje fue enviado por el otro usuario
                         if (messageData.senderId !== userId) {
                              sendNotification("Nuevo mensaje cifrado", decryptedText);
                         }
@@ -655,24 +660,31 @@
             
             roomUnsubscribe = onSnapshot(roomRef, (doc) => {
                 if (!doc.exists() || doc.data().status === 'closed') {
-                    if (roomId) { // Sólo si ya estábamos en una sala
+                    if (roomId) { 
                         customAlert("Sala Cerrada", "La conexión ha sido terminada por el otro usuario.");
                         resetAppAndLogout();
                     }
                     return;
                 }
-                // Si el host está esperando y el cliente se une
-                if (localStorage.getItem('userRole') === 'host' && doc.data().status === 'active' && !messagesUnsubscribe) {
-                     startChatSession();
+                
+                // OPTIMIZACIÓN para que el Host entre automáticamente
+                const roomData = doc.data();
+                const isHostWaiting = (userRole === 'host' && roomData.status === 'waiting' && roomData.clientId);
+                
+                // Si el Host está esperando Y ya hay un cliente (clientId) Y el estado es activo
+                // O si el Host está esperando (status 'waiting') y ve que hay un clientId
+                if (userRole === 'host' && roomData.status === 'active' && !messagesUnsubscribe) {
+                    // El Host debería hacer esto automáticamente sin la recarga
+                    startChatSession();
                 }
+                
             }, (error) => {
                  console.error("Error en el listener de sala:", error);
             });
         }
 
         /**
-         * Host: Cierra la sala marcándola como 'closed' en lugar de borrarla inmediatamente, 
-         * lo que permite al listener del cliente reaccionar.
+         * Host: Cierra la sala marcándola como 'closed' y borrando.
          */
         async function deleteRoom(id) {
             try {
@@ -698,6 +710,7 @@
             symmetricKey = null;
             pinHash = null;
             roomId = null;
+            userRole = null;
             localStorage.clear(); 
             
             auth.signOut(); 
@@ -707,7 +720,7 @@
         }
         window.closeSessionAndWipe = function() {
              // El host llama a deleteRoom, luego todos llaman a resetAppAndLogout()
-             if (roomId) {
+             if (roomId && userRole === 'host') {
                  deleteRoom(roomId).then(resetAppAndLogout);
              } else {
                  resetAppAndLogout();
@@ -724,6 +737,7 @@
         }
 
         function sendNotification(title, body) {
+            // Solo notificar si la ventana no está visible
             if (Notification.permission === "granted" && document.hidden) {
                 new Notification(title, { body: body, icon: './favicon.ico' });
             }
@@ -739,6 +753,7 @@
                 // Si hay sesión persistente, pedimos PIN
                 roomId = persistedRoomId;
                 pinHash = persistedPinHash;
+                userRole = persistedRole;
                 showScreen('pinLockScreen');
                 document.getElementById('pinError').classList.add('hidden');
             } else {
@@ -764,9 +779,6 @@
                         console.error("Error al iniciar sesión anónima:", error);
                         // Mostrar la alerta de Firebase Auth
                         customAlert("Error de Auth", "No se pudo iniciar la sesión anónima de Firebase. Revisa tu conexión y las reglas de seguridad.");
-                        
-                        // Opcional: Mostrar la pantalla de configuración sin botones si falla
-                        // showScreen('setupScreen'); 
                     });
             }
         });
