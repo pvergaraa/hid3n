@@ -94,21 +94,12 @@
                 </div>
         </header>
 
-        <main class="flex-grow p-4 overflow-hidden relative">
-
+<main class="flex-grow p-4 overflow-hidden relative">
+            
             <div id="pinLockScreen" class="absolute inset-0 bg-[#161b22] z-50 flex flex-col items-center justify-center p-4 transition-opacity duration-300 hidden">
-                <div class="p-8 bg-[#21262d] rounded-xl w-full max-w-xs shadow-lg border border-[#30363d]">
-                    <h2 class="text-2xl font-bold mb-4 text-center">🔐 Acceso Requerido</h2>
-                    <p id="pinInstruction" class="text-sm text-gray-400 mb-6 text-center">Ingresa tu clave numérica de 4 dígitos:</p>
-                    <input type="number" id="pinInput" placeholder="Clave (ej: 1234)" maxlength="4" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-2xl tracking-widest focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="if(this.value.length > this.maxLength) this.value = this.value.slice(0, this.maxLength);">
-                    <button onclick="handlePinInput()" class="w-full bg-[#58a6ff] text-white py-3 rounded-lg font-semibold hover:bg-[#4a8ce6] transition duration-200">
-                        Acceder
-                    </button>
-                    <p id="pinError" class="text-sm text-red-400 mt-3 text-center hidden">Clave incorrecta. Intenta de nuevo.</p>
-                </div>
-            </div>
+                </div>
 
-            <div id="setupScreen" class="absolute inset-0 bg-[#161b22] z-40 flex flex-col items-center justify-center p-4 transition-opacity duration-300 hidden">
+            <div id="setupScreen" class="absolute inset-0 bg-[#161b22] z-40 flex flex-col items-center justify-center p-4 transition-opacity duration-300">
                 <div class="p-8 bg-[#21262d] rounded-xl w-full max-w-sm shadow-lg border border-[#30363d]">
                     <h2 class="text-2xl font-bold mb-6 text-center text-[#58a6ff]">Establecer Conexión Única</h2>
 
@@ -121,8 +112,8 @@
                             Ingresar Código (CLIENTE)
                             </button>
                     </div>
-
-                    <div id="hostArea" class="hidden">
+                    
+                    <div id="hostArea" class="hidden">
                         <p class="mb-3 text-center text-sm text-gray-400">Paso 1: Define tu PIN de 4 dígitos para futuros accesos.</p>
                         <input type="number" id="hostPinInput" placeholder="PIN de 4 dígitos" maxlength="4" class="w-full p-3 mb-4 rounded-lg bg-[#0d1117] border border-[#30363d] text-center text-lg focus:ring-[#58a6ff] focus:border-[#58a6ff]" oninput="if(this.value.length > this.maxLength) this.value = this.value.slice(0, this.maxLength);">
                         <button onclick="setupPinAndGenerateCode()" class="w-full bg-[#1f6feb] text-white py-3 rounded-lg font-semibold hover:bg-[#1a55b3] transition duration-200">
@@ -159,7 +150,15 @@
                     </div>
                 </div>
             </div>
+            
+                        <div id="chatScreen" class="h-full flex flex-col transition-opacity duration-300 hidden">
+                <div id="chatArea" class="chat-area flex flex-col">
+                                    </div>
+                            </div>
 
+                    </main>
+
+          
             <div id="chatScreen" class="h-full flex flex-col transition-opacity duration-300 hidden">
                 <div id="chatArea" class="chat-area flex flex-col">
                     <div class="system-alert mb-4">
