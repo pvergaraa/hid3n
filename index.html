@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RED-SECURE Chat</title>
     <script src="https://cdn.tailwindcss.com"></script> 
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
         
@@ -74,18 +75,13 @@
             margin: 0;
         }
         .system-alert {
-            background-color: #ff0000;
-            color: #ffffff;
-            font-weight: bold;
+            background-color: #30363d; /* Cambio de color para que sea menos intrusivo */
+            color: #c9d1d9;
+            font-weight: normal;
             padding: 8px 12px;
             border-radius: 8px;
             margin: 10px auto;
             text-align: center;
-            animation: pulse-red 1s infinite alternate;
-        }
-        @keyframes pulse-red {
-            from { opacity: 0.8; }
-            to { opacity: 1; }
         }
         .loader {
             border-color: #58a6ff;
@@ -216,9 +212,10 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, collection, query, orderBy, setDoc, addDoc, serverTimestamp, deleteDoc, runTransaction, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- 2. Configuración de Firebase ---
+        // --- 2. Configuración de Firebase (ACTUALIZADA con clave correcta) ---
         const firebaseConfig = {
-            apiKey: "AIzaSyA65iS3AUpfOGeZ_Vmi-DZXD1UHDO9l3s0",
+            // Clave API actualizada según la última captura de la consola de Firebase
+            apiKey: "AIzaSyA6Si3AUpfOGeZ_Vmi-DZXD1UHDO9l3s0",
             authDomain: "chat-app-f6527.firebaseapp.com",
             projectId: "chat-app-f6527",
             storageBucket: "chat-app-f6527.firebasestorage.app",
@@ -509,6 +506,7 @@
                 await runTransaction(db, async (transaction) => {
                     const roomDoc = await transaction.get(roomRef);
 
+                    // Verifica si la sala existe, si está cerrada o si ya tiene un cliente
                     if (!roomDoc.exists() || roomDoc.data().status === 'closed' || roomDoc.data().clientId) {
                         throw "ROOM_NOT_FOUND";
                     }
@@ -538,8 +536,9 @@
          * Host: Resetea el proceso si el código no funciona o se pierde.
          */
         window.cancelConnectionAndReset = function() {
+            // Se usa deleteRoom para marcar como 'closed' antes de limpiar localmente
             if (roomId) {
-                deleteRoom(roomId);
+                deleteRoom(roomId); 
             }
             
             pinHash = null;
@@ -628,8 +627,9 @@
                 orderBy('timestamp', 'asc')
             );
 
+            // Aseguramos que la alerta de conexión se mantenga visible
             const container = document.getElementById('chatArea');
-            container.innerHTML = `<div class="system-alert mb-4">Conexión establecida. Cifrado AES-GCM 256 activo.</div>`; // Limpiar chat al iniciar
+            container.innerHTML = `<div class="system-alert mb-4">Conexión establecida. Cifrado AES-GCM 256 activo.</div>`; 
 
             messagesUnsubscribe = onSnapshot(messagesQuery, (snapshot) => {
                 snapshot.docChanges().forEach(async (change) => {
@@ -670,21 +670,27 @@
             });
         }
 
-      // LÍNEA ~656
-async function deleteRoom(id) {
-    try {
-        const roomRef = doc(db, `secure_chats/${id}`);
-        // 🛑 CAMBIO CLAVE: Cambiar el estado a 'closed' en lugar de borrar
-        await setDoc(roomRef, { status: 'closed' }, { merge: true }); 
-        
-        // Opcional: Podrías mantener el borrado para limpiar la BD, pero 
-        // hacerlo después de un pequeño retraso para asegurar que el listener del cliente lo capte.
-        // await deleteDoc(doc(db, `secure_chats/${id}`)); 
-
-    } catch (e) {
-        console.error("Error al cerrar la sala:", e);
-    }
-}
+        /**
+         * Host: Cierra la sala marcándola como 'closed' en lugar de borrarla inmediatamente, 
+         * lo que permite al listener del cliente reaccionar.
+         */
+        async function deleteRoom(id) {
+            try {
+                const roomRef = doc(db, `secure_chats/${id}`);
+                // Cambia el estado a 'closed'
+                await setDoc(roomRef, { status: 'closed' }, { merge: true }); 
+            } catch (e) {
+                console.error("Error al cerrar la sala:", e);
+            }
+            // Retraso opcional para que el listener del cliente capte el cambio
+            setTimeout(async () => {
+                try {
+                     await deleteDoc(doc(db, `secure_chats/${id}`));
+                } catch (e) {
+                    console.error("Error al borrar la sala después del cierre:", e);
+                }
+            }, 5000);
+        }
 
         function resetAppAndLogout() {
             if (messagesUnsubscribe) messagesUnsubscribe();
@@ -696,10 +702,16 @@ async function deleteRoom(id) {
             
             auth.signOut(); 
             
+            // Forzar una recarga para iniciar el proceso de Auth de nuevo.
             window.location.reload(); 
         }
         window.closeSessionAndWipe = function() {
-             deleteRoom(roomId).then(resetAppAndLogout);
+             // El host llama a deleteRoom, luego todos llaman a resetAppAndLogout()
+             if (roomId) {
+                 deleteRoom(roomId).then(resetAppAndLogout);
+             } else {
+                 resetAppAndLogout();
+             }
         }
         window.resetAppAndLogout = resetAppAndLogout;
         
@@ -732,13 +744,9 @@ async function deleteRoom(id) {
             } else {
                 // Si no hay sesión, mostramos la configuración inicial
                 showScreen('setupScreen');
-            }
-            
-            // Asegurarse de que los controles de rol están visibles si estamos en setup
-            if (!persistedRole && document.getElementById('setupScreen').classList.contains('hidden') === false) {
-                 document.getElementById('roleSelection').classList.remove('hidden');
-                 document.getElementById('hostArea').classList.add('hidden');
-                 document.getElementById('clientArea').classList.add('hidden');
+                document.getElementById('roleSelection').classList.remove('hidden');
+                document.getElementById('hostArea').classList.add('hidden');
+                document.getElementById('clientArea').classList.add('hidden');
             }
         }
 
@@ -754,7 +762,11 @@ async function deleteRoom(id) {
                     })
                     .catch((error) => {
                         console.error("Error al iniciar sesión anónima:", error);
+                        // Mostrar la alerta de Firebase Auth
                         customAlert("Error de Auth", "No se pudo iniciar la sesión anónima de Firebase. Revisa tu conexión y las reglas de seguridad.");
+                        
+                        // Opcional: Mostrar la pantalla de configuración sin botones si falla
+                        // showScreen('setupScreen'); 
                     });
             }
         });
